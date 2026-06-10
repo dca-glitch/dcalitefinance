@@ -10,3 +10,6 @@ pnpm-debug.log*
 .DS_Store
 coverage/
 .prisma/
+
+# Local Docker overrides
+docker-compose.override.yml
