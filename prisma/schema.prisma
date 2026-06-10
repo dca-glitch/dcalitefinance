@@ -38,7 +38,12 @@ enum AuditAction {
   DELETE
   RESTORE
   LOGIN
+  LOGIN_FAILED
   LOGOUT
+  TOKEN_REFRESH
+  TOKEN_REUSE_DETECTED
+  SESSION_REVOKED
+  BOOTSTRAP_ADMIN
   INVITE
   ASSIGN_ROLE
   REMOVE_ROLE
@@ -73,16 +78,46 @@ model User {
   displayName String?    @map("display_name") @db.VarChar(160)
   status      UserStatus @default(ACTIVE)
 
+  passwordHash      String?   @map("password_hash") @db.Text
+  passwordUpdatedAt DateTime? @map("password_updated_at") @db.Timestamptz(6)
+  lastLoginAt       DateTime? @map("last_login_at") @db.Timestamptz(6)
+  tokenVersion      Int       @default(0) @map("token_version")
+
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   memberships TenantMembership[]
   roles        UserRole[]
+  sessions     UserSession[]
   auditLogs    AuditLog[]
 
   @@index([status, deletedAt])
   @@map("users")
+}
+
+model UserSession {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  refreshTokenHash String    @unique @map("refresh_token_hash") @db.Text
+  userAgent        String?   @map("user_agent") @db.VarChar(500)
+  ipAddress        String?   @map("ip_address") @db.VarChar(80)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  replacedById     String?   @map("replaced_by_id") @db.Uuid
+  revokedById      String?   @map("revoked_by_id") @db.Uuid
+  revocationReason String?   @map("revocation_reason") @db.VarChar(50)
+  lastUsedAt       DateTime? @map("last_used_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, revokedAt, expiresAt])
+  @@index([expiresAt])
+  @@index([replacedById])
+  @@index([revokedById])
+  @@map("user_sessions")
 }
 
 model TenantMembership {
