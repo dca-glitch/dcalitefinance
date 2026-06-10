@@ -49,6 +49,8 @@ async function main() {
       'tenant:manage:members',
       'client:read',
       'client:manage',
+      'project:read',
+      'project:manage',
       'role:read',
       'role:manage',
     ];
