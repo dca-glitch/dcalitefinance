@@ -103,6 +103,35 @@ async function activeTenantMemberships(userId: string): Promise<TenantMembership
   }));
 }
 
+async function revokeAllActiveUserSessions(input: {
+  userId: string;
+  revokedById: string;
+  reason: string;
+  request: Request;
+}): Promise<void> {
+  await prisma.userSession.updateMany({
+    where: {
+      userId: input.userId,
+      revokedAt: null,
+    },
+    data: {
+      revokedAt: new Date(),
+      revokedById: input.revokedById,
+      revocationReason: input.reason,
+    },
+  });
+
+  await writeAuditLog({
+    actorType: AuditActorType.SYSTEM,
+    action: AuditAction.TOKEN_REUSE_DETECTED,
+    actorUserId: input.userId,
+    request: input.request,
+    entityType: 'UserSession',
+    entityId: input.revokedById,
+    metadata: { reason: input.reason },
+  });
+}
+
 export async function login(input: LoginInput): Promise<AuthResponse> {
   const normalizedEmail = input.email.trim();
   const genericError = new AppError('Invalid email or password', 401, 'INVALID_CREDENTIALS');
@@ -178,34 +207,22 @@ export async function refresh(input: RefreshInput): Promise<AuthResponse> {
   const isReused = existingSession.revokedAt !== null || existingSession.replacedById !== null;
 
   if (isReused) {
-    await prisma.userSession.updateMany({
-      where: {
-        userId: existingSession.userId,
-        revokedAt: null,
-      },
-      data: {
-        revokedAt: now,
-        revokedById: existingSession.id,
-        revocationReason: 'REUSED',
-      },
-    });
-
-    await writeAuditLog({
-      actorType: AuditActorType.SYSTEM,
-      action: AuditAction.TOKEN_REUSE_DETECTED,
-      actorUserId: existingSession.userId,
+    await revokeAllActiveUserSessions({
+      userId: existingSession.userId,
+      revokedById: existingSession.id,
+      reason: 'REUSED',
       request: input.request,
-      entityType: 'UserSession',
-      entityId: existingSession.id,
-      metadata: { reason: 'refresh_token_reuse_detected' },
     });
 
     throw new AppError('Invalid session', 401, 'INVALID_SESSION');
   }
 
   if (existingSession.expiresAt <= now || existingSession.user.deletedAt || existingSession.user.status !== UserStatus.ACTIVE) {
-    await prisma.userSession.update({
-      where: { id: existingSession.id },
+    await prisma.userSession.updateMany({
+      where: {
+        id: existingSession.id,
+        revokedAt: null,
+      },
       data: {
         revokedAt: now,
         revocationReason: existingSession.expiresAt <= now ? 'EXPIRED' : 'USER_INACTIVE',
@@ -228,8 +245,12 @@ export async function refresh(input: RefreshInput): Promise<AuthResponse> {
       select: { id: true },
     });
 
-    await tx.userSession.update({
-      where: { id: existingSession.id },
+    const rotation = await tx.userSession.updateMany({
+      where: {
+        id: existingSession.id,
+        revokedAt: null,
+        replacedById: null,
+      },
       data: {
         revokedAt: now,
         replacedById: newSession.id,
@@ -238,6 +259,11 @@ export async function refresh(input: RefreshInput): Promise<AuthResponse> {
         lastUsedAt: now,
       },
     });
+
+    if (rotation.count !== 1) {
+      await tx.userSession.delete({ where: { id: newSession.id } });
+      throw new AppError('Invalid session', 401, 'INVALID_SESSION');
+    }
 
     return { id: newSession.id, refreshToken };
   });
@@ -277,8 +303,11 @@ export async function logout(input: LogoutInput): Promise<void> {
     return;
   }
 
-  await prisma.userSession.update({
-    where: { id: session.id },
+  await prisma.userSession.updateMany({
+    where: {
+      id: session.id,
+      revokedAt: null,
+    },
     data: {
       revokedAt: new Date(),
       revocationReason: 'LOGOUT',
