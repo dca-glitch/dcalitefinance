@@ -45,11 +45,19 @@ enum AuditAction {
   SESSION_REVOKED
   BOOTSTRAP_ADMIN
   INVITE
+  PASSWORD_SETUP
+  PASSWORD_RESET_REQUEST
+  PASSWORD_RESET_CONFIRM
   ASSIGN_ROLE
   REMOVE_ROLE
   GRANT_PERMISSION
   REVOKE_PERMISSION
   SYSTEM
+}
+
+enum AuthTokenPurpose {
+  INVITATION_SETUP
+  PASSWORD_RESET
 }
 
 model Tenant {
@@ -67,6 +75,7 @@ model Tenant {
   roles        Role[]
   userRoles    UserRole[]
   auditLogs    AuditLog[]
+  authTokens   AuthToken[]
 
   @@index([status, deletedAt])
   @@map("tenants")
@@ -87,10 +96,12 @@ model User {
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  memberships TenantMembership[]
-  roles        UserRole[]
-  sessions     UserSession[]
-  auditLogs    AuditLog[]
+  memberships       TenantMembership[]
+  roles             UserRole[]
+  sessions          UserSession[]
+  auditLogs         AuditLog[]
+  authTokens        AuthToken[] @relation("AuthTokenUser")
+  createdAuthTokens AuthToken[] @relation("AuthTokenCreatedBy")
 
   @@index([status, deletedAt])
   @@map("users")
@@ -118,6 +129,30 @@ model UserSession {
   @@index([replacedById])
   @@index([revokedById])
   @@map("user_sessions")
+}
+
+model AuthToken {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  tenantId  String?          @map("tenant_id") @db.Uuid
+  purpose   AuthTokenPurpose
+  tokenHash String           @unique @map("token_hash") @db.Text
+
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+
+  createdById String? @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user      User    @relation("AuthTokenUser", fields: [userId], references: [id], onDelete: Restrict)
+  tenant    Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  createdBy User?   @relation("AuthTokenCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([userId, purpose, consumedAt, revokedAt, expiresAt])
+  @@index([tenantId, purpose, createdAt])
+  @@index([expiresAt])
+  @@map("auth_tokens")
 }
 
 model TenantMembership {
