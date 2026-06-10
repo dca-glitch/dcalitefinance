@@ -9,6 +9,8 @@ RUN apt-get update \
 COPY package*.json ./
 COPY prisma ./prisma
 
+ENV DATABASE_URL=postgresql://dca_lite_user:dca_lite_password@postgres:5432/dca_books_lite?schema=public
+
 RUN npm install
 RUN npx prisma generate
 
