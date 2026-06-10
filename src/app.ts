@@ -17,7 +17,7 @@ export function createApp(): express.Express {
   app.use(express.json({ limit: '1mb' }));
   app.use(requestIdMiddleware);
   app.use(httpLoggerMiddleware);
-  app.use('/api/v1/health', healthRoutes);
+  app.use(env.API_PREFIX + '/health', healthRoutes);
   app.use(notFoundMiddleware);
   app.use(errorMiddleware);
 
