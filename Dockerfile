@@ -2,8 +2,6 @@ FROM node:20-bookworm-slim AS base
 
 WORKDIR /app
 
-ENV NODE_ENV=production
-
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
@@ -20,6 +18,8 @@ COPY scripts ./scripts
 
 RUN npm run build
 RUN npm prune --omit=dev
+
+ENV NODE_ENV=production
 
 EXPOSE 4000
 
