@@ -27,6 +27,12 @@ enum MembershipStatus {
   REMOVED
 }
 
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
 enum AuditActorType {
   USER
   SYSTEM
@@ -71,9 +77,10 @@ model Tenant {
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  memberships TenantMembership[]
+  memberships TenantMembership[] 
   roles        Role[]
   userRoles    UserRole[]
+  clients      Client[]
   auditLogs    AuditLog[]
   authTokens   AuthToken[]
 
@@ -172,6 +179,36 @@ model TenantMembership {
   @@index([tenantId, status, deletedAt])
   @@index([userId, status, deletedAt])
   @@map("tenant_memberships")
+}
+
+model Client {
+  id       String       @id @default(uuid()) @db.Uuid
+  tenantId String       @map("tenant_id") @db.Uuid
+  name     String       @db.VarChar(160)
+  status   ClientStatus  @default(ACTIVE)
+
+  email                 String?  @db.Citext
+  phone                 String?  @db.VarChar(40)
+  website               String?  @db.VarChar(200)
+  taxId                 String?  @map("tax_id") @db.VarChar(80)
+  billingAddressLine1   String?  @map("billing_address_line1") @db.VarChar(160)
+  billingAddressLine2   String?  @map("billing_address_line2") @db.VarChar(160)
+  billingCity           String?  @map("billing_city") @db.VarChar(120)
+  billingState          String?  @map("billing_state") @db.VarChar(120)
+  billingPostalCode     String?  @map("billing_postal_code") @db.VarChar(40)
+  billingCountry        String?  @map("billing_country") @db.VarChar(120)
+  notes                 String?  @db.Text
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, status, deletedAt])
+  @@index([tenantId, name])
+  @@index([tenantId, email])
+  @@map("clients")
 }
 
 model Permission {

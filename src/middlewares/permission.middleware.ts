@@ -43,3 +43,47 @@ export function requirePermission(permissionKey: string) {
     }
   };
 }
+
+export function requireAnyPermission(permissionKeys: string[]) {
+  return async function anyPermissionMiddleware(req: Request, _res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!req.auth) {
+        throw new AppError('Unauthenticated', 401, 'UNAUTHENTICATED');
+      }
+
+      if (!req.tenant) {
+        throw new AppError('Tenant context required', 400, 'TENANT_CONTEXT_REQUIRED');
+      }
+
+      const rolePermission = await prisma.rolePermission.findFirst({
+        where: {
+          permission: {
+            key: {
+              in: permissionKeys,
+            },
+          },
+          role: {
+            tenantId: req.tenant.id,
+            deletedAt: null,
+            users: {
+              some: {
+                tenantId: req.tenant.id,
+                userId: req.auth.userId,
+                deletedAt: null,
+              },
+            },
+          },
+        },
+        select: { id: true },
+      });
+
+      if (!rolePermission) {
+        throw new AppError('Forbidden', 403, 'PERMISSION_DENIED');
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
