@@ -7,16 +7,12 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-COPY prisma ./prisma
-
-ENV DATABASE_URL=postgresql://dca_lite_user:dca_lite_password@postgres:5432/dca_books_lite?schema=public
-
 RUN npm install
-RUN npx prisma generate
 
 COPY tsconfig.json ./
 COPY src ./src
 COPY scripts ./scripts
+COPY prisma ./prisma
 
 RUN npm run build
 RUN npm prune --omit=dev
