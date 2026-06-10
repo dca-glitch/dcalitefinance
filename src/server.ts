@@ -3,6 +3,7 @@ import { createApp } from './app';
 import { closeDatabaseConnection } from './config/db';
 import { env } from './config/env';
 import { logger } from './config/logger';
+import { closePrismaConnection } from './config/prisma';
 
 const app = createApp();
 const server = createServer(app);
@@ -20,6 +21,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
       process.exit(1);
     }
 
+    await closePrismaConnection();
     await closeDatabaseConnection();
     logger.info('Shutdown complete');
     process.exit(0);
