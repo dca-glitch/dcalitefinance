@@ -6,6 +6,8 @@ import helmet from 'helmet';
 import { env } from './config/env';
 import { authRoutes } from './routes/auth.routes';
 import { invitationsRoutes } from './routes/invitations.routes';
+import { rolesRoutes } from './routes/roles.routes';
+import { tenantRoutes } from './routes/tenant.routes';
 import { healthRoutes } from './routes/health.routes';
 import { requestIdMiddleware } from './middlewares/requestId.middleware';
 import { httpLoggerMiddleware } from './middlewares/httpLogger.middleware';
@@ -47,6 +49,8 @@ export function createApp(): express.Express {
   app.use(env.API_PREFIX + '/auth/login', loginRateLimiter);
   app.use(env.API_PREFIX + '/auth', authRateLimiter, authRoutes);
   app.use(env.API_PREFIX + '/invitations', authRateLimiter, invitationsRoutes);
+  app.use(env.API_PREFIX + '/tenant', authRateLimiter, tenantRoutes);
+  app.use(env.API_PREFIX + '/roles', authRateLimiter, rolesRoutes);
 
   app.use(notFoundMiddleware);
   app.use(errorMiddleware);
