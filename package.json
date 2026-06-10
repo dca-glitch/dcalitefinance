@@ -2,7 +2,7 @@
   "name": "dca-books-lite-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "DCA Books Lite backend foundation - Phase 0A",
+  "description": "DCA Books Lite backend foundation - Phase 0B",
   "main": "dist/server.js",
   "type": "commonjs",
   "scripts": {
@@ -11,9 +11,12 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "prisma:validate": "prisma validate",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate:dev": "prisma migrate dev",
     "health": "node scripts/check-health.mjs"
   },
   "dependencies": {
+    "@prisma/client": "^5.22.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
