@@ -8,10 +8,10 @@ export const prisma = new PrismaClient({
   ],
 });
 
-prisma.$on('error', (event) => {
+prisma.$on('error', (event: { message: string; target?: string }) => {
   logger.error({ event }, 'Prisma error');
 });
 
-prisma.$on('warn', (event) => {
+prisma.$on('warn', (event: { message: string; target?: string }) => {
   logger.warn({ event }, 'Prisma warning');
 });
