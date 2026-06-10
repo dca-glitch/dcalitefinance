@@ -10,10 +10,11 @@ COPY package*.json ./
 RUN npm install
 
 COPY tsconfig.json ./
+COPY prisma ./prisma
 COPY src ./src
 COPY scripts ./scripts
-COPY prisma ./prisma
 
+RUN npx prisma generate
 RUN npm run build
 RUN npm prune --omit=dev
 
