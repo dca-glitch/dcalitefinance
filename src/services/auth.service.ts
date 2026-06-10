@@ -5,6 +5,7 @@ import { env } from '../config/env';
 import { AppError } from '../errors/AppError';
 import { generateOpaqueToken, hashToken, verifyPassword } from '../utils/crypto';
 import { signAccessToken } from '../utils/jwt';
+import { normalizeEmail } from '../utils/email';
 import { writeAuditLog } from './audit.service';
 
 interface LoginInput {
@@ -133,7 +134,7 @@ async function revokeAllActiveUserSessions(input: {
 }
 
 export async function login(input: LoginInput): Promise<AuthResponse> {
-  const normalizedEmail = input.email.trim();
+  const normalizedEmail = normalizeEmail(input.email);
   const genericError = new AppError('Invalid email or password', 401, 'INVALID_CREDENTIALS');
 
   const user = await prisma.user.findUnique({

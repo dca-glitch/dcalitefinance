@@ -17,6 +17,8 @@ const envSchema = z
     ACCESS_TOKEN_SECRET: z.string().min(32),
     ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(15),
     REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().min(1).max(60).default(14),
+    INVITATION_TOKEN_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(72),
+    PASSWORD_RESET_TOKEN_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(2),
     REFRESH_COOKIE_NAME: z.string().min(1).default('dca_books_refresh'),
     REFRESH_COOKIE_PATH: z.string().min(1).default('/api/v1/auth/refresh'),
     COOKIE_SECURE: z.coerce.boolean().default(false),

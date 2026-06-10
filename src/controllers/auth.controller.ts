@@ -4,10 +4,16 @@ import { AppError } from '../errors/AppError';
 import { toJsonSafe } from '../utils/json';
 import { clearRefreshCookie, setRefreshCookie } from '../utils/cookies';
 import * as authService from '../services/auth.service';
+import { setupPassword as setupPasswordService } from '../services/password.service';
 import { env } from '../config/env';
 
 const loginSchema = z.object({
   email: z.string().email().max(254),
+  password: z.string().min(12).max(200),
+});
+
+const setupPasswordSchema = z.object({
+  token: z.string().trim().min(1),
   password: z.string().min(12).max(200),
 });
 
@@ -94,6 +100,26 @@ export async function me(req: Request, res: Response): Promise<void> {
     toJsonSafe({
       success: true,
       data: result,
+    }),
+  );
+}
+
+export async function setupPassword(req: Request, res: Response): Promise<void> {
+  const parsed = setupPasswordSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    throw new AppError('Invalid setup password payload', 400, 'INVALID_SETUP_PASSWORD_PAYLOAD');
+  }
+
+  await setupPasswordService({
+    token: parsed.data.token,
+    password: parsed.data.password,
+    request: req,
+  });
+
+  res.status(200).json(
+    toJsonSafe({
+      success: true,
     }),
   );
 }

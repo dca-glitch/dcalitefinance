@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { env } from './config/env';
 import { authRoutes } from './routes/auth.routes';
+import { invitationsRoutes } from './routes/invitations.routes';
 import { healthRoutes } from './routes/health.routes';
 import { requestIdMiddleware } from './middlewares/requestId.middleware';
 import { httpLoggerMiddleware } from './middlewares/httpLogger.middleware';
@@ -45,6 +46,7 @@ export function createApp(): express.Express {
   app.use(env.API_PREFIX + '/health', healthRoutes);
   app.use(env.API_PREFIX + '/auth/login', loginRateLimiter);
   app.use(env.API_PREFIX + '/auth', authRateLimiter, authRoutes);
+  app.use(env.API_PREFIX + '/invitations', authRateLimiter, invitationsRoutes);
 
   app.use(notFoundMiddleware);
   app.use(errorMiddleware);
