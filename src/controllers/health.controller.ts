@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { prisma } from '../config/prisma';
+import { checkDatabaseConnection } from '../config/db';
 import { toJsonSafe } from '../utils/json';
 
 export function live(_req: Request, res: Response): void {
@@ -15,7 +15,7 @@ export function live(_req: Request, res: Response): void {
 }
 
 export async function ready(_req: Request, res: Response): Promise<void> {
-  await prisma.$queryRaw`SELECT 1`;
+  await checkDatabaseConnection();
 
   res.status(200).json(
     toJsonSafe({
