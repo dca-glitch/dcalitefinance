@@ -188,7 +188,12 @@ function buildPaymentWhere(input: Pick<ListPaymentsInput, 'tenantId' | 'invoiceI
   return where;
 }
 
-async function lockInvoiceForPayment(tx: Prisma.TransactionClient, tenantId: string, invoiceId: string): Promise<{
+async function lockInvoiceForPayment(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  invoiceId: string,
+  allowedStatuses: InvoiceStatus[],
+): Promise<{
   id: string;
   invoiceNumber: string;
   status: InvoiceStatus;
@@ -219,7 +224,7 @@ async function lockInvoiceForPayment(tx: Prisma.TransactionClient, tenantId: str
     throw invoiceNotFoundError();
   }
 
-  if (invoice.status !== InvoiceStatus.ISSUED && invoice.status !== InvoiceStatus.PARTIALLY_PAID) {
+  if (!allowedStatuses.includes(invoice.status)) {
     throw paymentNotIssuableError();
   }
 
@@ -344,7 +349,10 @@ export async function createPayment(input: CreatePaymentInput): Promise<SafePaym
   paymentInvalidAmountCheck(input.amountMinor);
 
   const payment = await prisma.$transaction(async (tx) => {
-    const invoice = await lockInvoiceForPayment(tx, input.tenantId, input.invoiceId);
+    const invoice = await lockInvoiceForPayment(tx, input.tenantId, input.invoiceId, [
+      InvoiceStatus.ISSUED,
+      InvoiceStatus.PARTIALLY_PAID,
+    ]);
     const paidAmountMinor = await currentPaidAmountMinor(tx, input.tenantId, invoice.id);
     const remainingBalanceMinor = invoice.totalMinor - paidAmountMinor;
 
@@ -426,7 +434,11 @@ export async function reversePayment(input: ReversePaymentInput): Promise<SafePa
       throw paymentNotFoundError();
     }
 
-    await lockInvoiceForPayment(tx, input.tenantId, existing.invoiceId);
+    await lockInvoiceForPayment(tx, input.tenantId, existing.invoiceId, [
+      InvoiceStatus.ISSUED,
+      InvoiceStatus.PARTIALLY_PAID,
+      InvoiceStatus.PAID,
+    ]);
 
     if (existing.status !== PaymentStatus.POSTED) {
       throw paymentAlreadyReversedError();
