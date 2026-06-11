@@ -73,7 +73,7 @@ function buildInitialForm(): PaymentFormState {
     invoiceId: '',
     amount: '',
     paymentDate: toLocalDateInputValue(),
-    method: 'Bank transfer',
+    method: 'Bank Transfer',
     reference: '',
     notes: '',
   };
@@ -259,13 +259,18 @@ export function PaymentsPage() {
               type="date"
               value={form.paymentDate}
             />
-            <Input
-              label="Method"
-              maxLength={80}
-              onChange={(event) => setForm((current) => ({ ...current, method: event.target.value }))}
-              required
-              value={form.method}
-            />
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slate-200">Method</span>
+              <select
+                className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+                onChange={(event) => setForm((current) => ({ ...current, method: event.target.value }))}
+                value={form.method}
+              >
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Cash">Cash</option>
+                <option value="Stripe">Stripe</option>
+              </select>
+            </label>
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <Input

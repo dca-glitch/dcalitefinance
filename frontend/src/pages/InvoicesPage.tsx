@@ -279,10 +279,7 @@ export function InvoicesPage() {
   }, [activeTenant?.id, activeSearch]);
 
   useEffect(() => {
-    formContainerRef.current?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, []);
 
   function updateForm(nextForm: InvoiceFormState | ((current: InvoiceFormState) => InvoiceFormState)) {
