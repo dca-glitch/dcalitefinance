@@ -7,6 +7,7 @@ import { ClientsPage } from '../pages/ClientsPage';
 import { VendorsPage } from '../pages/VendorsPage';
 import { ExpenseCategoriesPage } from '../pages/ExpenseCategoriesPage';
 import { BillsPage } from '../pages/BillsPage';
+import { RecurringInvoicesPage } from '../pages/RecurringInvoicesPage';
 import { ServiceItemsPage } from '../pages/ServiceItemsPage';
 import { InvoicesPage } from '../pages/InvoicesPage';
 import { PaymentsPage } from '../pages/PaymentsPage';
@@ -50,6 +51,7 @@ export function AppRoutes() {
           <Route path="vendors" element={<VendorsPage />} />
           <Route path="expense-categories" element={<ExpenseCategoriesPage />} />
           <Route path="bills" element={<BillsPage />} />
+          <Route path="recurring-invoices" element={<RecurringInvoicesPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="service-items" element={<ServiceItemsPage />} />
           <Route path="invoices" element={<InvoicesPage />} />

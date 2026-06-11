@@ -58,6 +58,14 @@ export const appNavigation: NavigationItem[] = [
     showInMobileNav: true,
   },
   {
+    label: 'Recurring Invoices',
+    path: '/app/recurring-invoices',
+    status: 'active',
+    description: 'Manage recurring invoice schedules',
+    showInSidebar: true,
+    showInMobileNav: true,
+  },
+  {
     label: 'Invoices',
     path: '/app/invoices',
     status: 'active',

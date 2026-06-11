@@ -7,10 +7,13 @@ import { ErrorState } from '../components/states/ErrorState';
 import { LoadingState } from '../components/states/LoadingState';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
+import { AttachmentPanel } from '../components/attachments/AttachmentPanel';
 import { listInvoices } from '../lib/invoices-api';
+import { deletePaymentAttachment, listPaymentAttachments, uploadPaymentAttachment } from '../lib/file-attachments-api';
 import { createPayment, listPayments, reversePayment } from '../lib/payments-api';
 import { useAuth } from '../hooks/useAuth';
 import type { InvoiceListItem } from '../types/invoice';
+import type { FileAttachmentRecord } from '../types/file-attachment';
 import type { PaymentRecord } from '../types/payment';
 
 interface PaymentFormState {
@@ -117,6 +120,12 @@ export function PaymentsPage() {
   const [formLoading, setFormLoading] = useState(false);
   const [reverseLoadingId, setReverseLoadingId] = useState<string | null>(null);
   const [filterInvoiceId, setFilterInvoiceId] = useState('');
+  const [selectedPaymentId, setSelectedPaymentId] = useState('');
+  const [attachments, setAttachments] = useState<FileAttachmentRecord[]>([]);
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+  const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [deletingAttachmentId, setDeletingAttachmentId] = useState<string | null>(null);
   const [form, setForm] = useState<PaymentFormState>(() => buildInitialForm());
 
   async function loadPaymentsPage(invoiceId: string) {
@@ -145,9 +154,41 @@ export function PaymentsPage() {
     }
   }
 
+  async function loadPaymentAttachments(paymentId: string) {
+    setAttachmentsLoading(true);
+    setAttachmentsError(null);
+
+    try {
+      const result = await listPaymentAttachments(paymentId);
+      setAttachments(result.attachments);
+    } catch (error) {
+      setAttachments([]);
+      setAttachmentsError(error instanceof Error ? error.message : 'Failed to load payment proof attachments');
+    } finally {
+      setAttachmentsLoading(false);
+    }
+  }
+
   useEffect(() => {
     void loadPaymentsPage(filterInvoiceId);
   }, [activeTenant?.id, filterInvoiceId]);
+
+  useEffect(() => {
+    if (!selectedPaymentId) {
+      setAttachments([]);
+      setAttachmentsError(null);
+      return;
+    }
+
+    const payment = payments.find((currentPayment) => currentPayment.id === selectedPaymentId);
+    if (!payment) {
+      setAttachments([]);
+      setAttachmentsError(null);
+      return;
+    }
+
+    void loadPaymentAttachments(selectedPaymentId);
+  }, [payments, selectedPaymentId]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -168,7 +209,7 @@ export function PaymentsPage() {
         throw new Error('Payment date is required.');
       }
 
-      await createPayment({
+      const createdPayment = await createPayment({
         invoiceId: form.invoiceId.trim(),
         amountMinor,
         paymentDate: form.paymentDate.trim(),
@@ -178,6 +219,8 @@ export function PaymentsPage() {
       });
 
       setForm(buildInitialForm());
+      setSelectedPaymentId(createdPayment.id);
+      setPageError(null);
       await loadPaymentsPage(filterInvoiceId);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Unable to save payment');
@@ -194,6 +237,10 @@ export function PaymentsPage() {
 
     try {
       await reversePayment(payment.id, reason ? { reason } : {});
+      if (selectedPaymentId === payment.id) {
+        setAttachments([]);
+        setAttachmentsError(null);
+      }
       await loadPaymentsPage(filterInvoiceId);
     } catch (error) {
       setPageError(error instanceof Error ? error.message : 'Unable to reverse payment');
@@ -211,6 +258,52 @@ export function PaymentsPage() {
     () => invoices.find((invoice) => invoice.id === form.invoiceId) ?? null,
     [form.invoiceId, invoices],
   );
+
+  const selectedPayment = useMemo(
+    () => payments.find((payment) => payment.id === selectedPaymentId) ?? null,
+    [payments, selectedPaymentId],
+  );
+
+  async function handleUploadPaymentAttachment(file: File) {
+    if (!selectedPayment) {
+      return;
+    }
+
+    setUploadLoading(true);
+    setAttachmentsError(null);
+
+    try {
+      await uploadPaymentAttachment(selectedPayment.id, file);
+      await loadPaymentAttachments(selectedPayment.id);
+    } catch (error) {
+      setAttachmentsError(error instanceof Error ? error.message : 'Unable to upload payment proof attachment');
+    } finally {
+      setUploadLoading(false);
+    }
+  }
+
+  async function handleDeletePaymentAttachment(attachment: FileAttachmentRecord) {
+    if (!selectedPayment) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Remove attachment "${attachment.originalFilename}"?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingAttachmentId(attachment.id);
+    setAttachmentsError(null);
+
+    try {
+      await deletePaymentAttachment(selectedPayment.id, attachment.id);
+      await loadPaymentAttachments(selectedPayment.id);
+    } catch (error) {
+      setAttachmentsError(error instanceof Error ? error.message : 'Unable to remove payment proof attachment');
+    } finally {
+      setDeletingAttachmentId(null);
+    }
+  }
 
   return (
     <AppPage>
@@ -391,17 +484,20 @@ export function PaymentsPage() {
                         </span>
                       </td>
                       <td className="px-6 py-5">
-                        {payment.status === 'POSTED' ? (
-                          <Button
-                            loading={reverseLoadingId === payment.id}
-                            onClick={() => void handleReverse(payment)}
-                            variant="secondary"
-                          >
-                            Reverse
+                        <div className="flex flex-wrap gap-2">
+                          <Button onClick={() => setSelectedPaymentId(payment.id)} variant="secondary">
+                            Proof
                           </Button>
-                        ) : (
-                          <span className="text-sm text-slate-500">No actions</span>
-                        )}
+                          {payment.status === 'POSTED' ? (
+                            <Button
+                              loading={reverseLoadingId === payment.id}
+                              onClick={() => void handleReverse(payment)}
+                              variant="secondary"
+                            >
+                              Reverse
+                            </Button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -411,6 +507,28 @@ export function PaymentsPage() {
           </div>
         ) : null}
       </PageSection>
+
+      {selectedPayment ? (
+        <PageSection
+          description="Upload and manage proof of payment attachments for the selected payment."
+          title="Proof of payment - optional"
+        >
+          <AttachmentPanel
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            attachmentError={attachmentsError}
+            attachments={attachments}
+            deletingAttachmentId={deletingAttachmentId}
+            description={`Selected payment ${selectedPayment.method} for invoice ${selectedPayment.invoice.invoiceNumber}.`}
+            emptyMessage="No proof of payment attachments have been uploaded yet."
+            loading={attachmentsLoading}
+            onDelete={handleDeletePaymentAttachment}
+            onUpload={handleUploadPaymentAttachment}
+            resetKey={selectedPayment.id}
+            title="Proof of payment - optional"
+            uploadLoading={uploadLoading}
+          />
+        </PageSection>
+      ) : null}
     </AppPage>
   );
 }
