@@ -51,6 +51,8 @@ async function main() {
       'client:manage',
       'project:read',
       'project:manage',
+      'serviceItem:read',
+      'serviceItem:manage',
       'role:read',
       'role:manage',
     ];

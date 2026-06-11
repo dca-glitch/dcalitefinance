@@ -8,6 +8,7 @@ import { authRoutes } from './routes/auth.routes';
 import { invitationsRoutes } from './routes/invitations.routes';
 import { clientsRoutes } from './routes/clients.routes';
 import { projectsRoutes } from './routes/projects.routes';
+import { serviceItemsRoutes } from './routes/service-items.routes';
 import { rolesRoutes } from './routes/roles.routes';
 import { tenantRoutes } from './routes/tenant.routes';
 import { healthRoutes } from './routes/health.routes';
@@ -54,6 +55,7 @@ export function createApp(): express.Express {
   app.use(env.API_PREFIX + '/tenant', authRateLimiter, tenantRoutes);
   app.use(env.API_PREFIX + '/clients', authRateLimiter, clientsRoutes);
   app.use(env.API_PREFIX + '/projects', authRateLimiter, projectsRoutes);
+  app.use(env.API_PREFIX + '/service-items', authRateLimiter, serviceItemsRoutes);
   app.use(env.API_PREFIX + '/roles', authRateLimiter, rolesRoutes);
 
   app.use(notFoundMiddleware);
