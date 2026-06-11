@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { useIsAuthenticated } from '../lib/auth-storage';
+import { useAuth } from '../hooks/useAuth';
 import { AuthLayout } from '../layouts/AuthLayout';
 import { AppShell } from '../layouts/AppShell';
 import { LoginPage } from '../pages/LoginPage';
@@ -7,20 +7,34 @@ import { DashboardPage } from '../pages/DashboardPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
+function RouteLoading() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-sm text-slate-400">
+      Restoring your session...
+    </div>
+  );
+}
+
 function RootRedirect({ isAuthenticated }: { isAuthenticated: boolean }) {
   return <Navigate to={isAuthenticated ? '/app/dashboard' : '/login'} replace />;
 }
 
 export function AppRoutes() {
-  const authenticated = useIsAuthenticated();
+  const { isAuthenticated, isHydrated } = useAuth();
 
   return (
     <Routes>
-      <Route path="/" element={<RootRedirect isAuthenticated={authenticated} />} />
+      <Route path="/" element={isHydrated ? <RootRedirect isAuthenticated={isAuthenticated} /> : <RouteLoading />} />
       <Route element={<AuthLayout />}>
         <Route
           path="/login"
-          element={authenticated ? <Navigate to="/app/dashboard" replace /> : <LoginPage />}
+          element={
+            isHydrated ? (
+              isAuthenticated ? <Navigate to="/app/dashboard" replace /> : <LoginPage />
+            ) : (
+              <RouteLoading />
+            )
+          }
         />
       </Route>
       <Route path="/app" element={<ProtectedRoute />}>

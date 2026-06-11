@@ -1,42 +1,24 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiClient } from '../lib/api-client';
-import { setAccessToken } from '../lib/auth-storage';
-import type { ApiResponse } from '../types/api';
-import type { LoginRequest, LoginResponse } from '../types/auth';
+import { useAuth } from '../hooks/useAuth';
+import type { LoginRequest } from '../types/auth';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Card } from '../components/ui/Card';
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const { authError, isLoggingIn, login } = useAuth();
   const [form, setForm] = useState<LoginRequest>({ email: '', password: '' });
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
-    setError(null);
 
     try {
-      const payload: LoginRequest = {
-        email: form.email.trim(),
-        password: form.password,
-      };
-
-      const response = await apiClient.post<ApiResponse<LoginResponse>>('/auth/login', payload);
-
-      if (!response.success) {
-        throw new Error(response.error.message);
-      }
-
-      setAccessToken(response.data.accessToken);
+      await login(form.email, form.password);
       navigate('/app/dashboard', { replace: true });
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Login failed');
-    } finally {
-      setLoading(false);
+    } catch {
+      return;
     }
   }
 
@@ -67,13 +49,13 @@ export function LoginPage() {
             required
           />
 
-          {error ? (
+          {authError ? (
             <div className="rounded-2xl border border-rose-900 bg-rose-950/50 px-4 py-3 text-sm text-rose-200">
-              {error}
+              {authError}
             </div>
           ) : null}
 
-          <Button type="submit" className="w-full" loading={loading}>
+          <Button type="submit" className="w-full" loading={isLoggingIn}>
             Sign in
           </Button>
         </form>

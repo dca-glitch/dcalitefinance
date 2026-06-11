@@ -3,12 +3,15 @@ import { getAccessToken } from './auth-storage';
 import type { ApiErrorResponse, ApiResponse } from '../types/api';
 
 type JsonRequestBody = unknown;
+type UnauthorizedHandler = (() => void) | null;
 
 interface RequestOptions extends Omit<RequestInit, 'body' | 'headers' | 'method'> {
   body?: JsonRequestBody;
   token?: string | null;
   headers?: HeadersInit;
 }
+
+let unauthorizedHandler: UnauthorizedHandler = null;
 
 function buildUrl(path: string): string {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
@@ -53,6 +56,10 @@ function normalizeError(status: number, payload: unknown): Error {
   return new Error(`Request failed with status ${status}`);
 }
 
+export function setUnauthorizedHandler(handler: UnauthorizedHandler): void {
+  unauthorizedHandler = handler;
+}
+
 async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
   const token = options.token ?? getAccessToken();
   const headers = new Headers(options.headers);
@@ -76,6 +83,10 @@ async function request<T>(method: string, path: string, options: RequestOptions 
   const payload = isJsonResponse(contentType) ? (await readResponseBody(response)) : await response.text();
 
   if (!response.ok) {
+    if (response.status === 401) {
+      unauthorizedHandler?.();
+    }
+
     throw normalizeError(response.status, payload);
   }
 

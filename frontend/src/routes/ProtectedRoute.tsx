@@ -1,11 +1,19 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useIsAuthenticated } from '../lib/auth-storage';
+import { useAuth } from '../hooks/useAuth';
 
 export function ProtectedRoute() {
   const location = useLocation();
-  const authenticated = useIsAuthenticated();
+  const { isAuthenticated, isHydrated } = useAuth();
 
-  if (!authenticated) {
+  if (!isHydrated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-sm text-slate-400">
+        Restoring your session...
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
