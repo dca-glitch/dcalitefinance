@@ -188,31 +188,38 @@ function buildPaymentWhere(input: Pick<ListPaymentsInput, 'tenantId' | 'invoiceI
   return where;
 }
 
-async function loadInvoiceForPayment(tx: Prisma.TransactionClient, tenantId: string, invoiceId: string): Promise<{
+async function lockInvoiceForPayment(tx: Prisma.TransactionClient, tenantId: string, invoiceId: string): Promise<{
   id: string;
   invoiceNumber: string;
   status: InvoiceStatus;
   totalMinor: number;
 }> {
-  const invoice = await tx.invoice.findFirst({
-    where: {
-      tenantId,
-      id: invoiceId,
-      deletedAt: null,
-    },
-    select: {
-      id: true,
-      invoiceNumber: true,
-      status: true,
-      totalMinor: true,
-    },
-  });
+  const rows = await tx.$queryRaw<
+    Array<{
+      id: string;
+      invoiceNumber: string;
+      status: InvoiceStatus;
+      totalMinor: number;
+    }>
+  >`
+    SELECT
+      "id",
+      "invoice_number" AS "invoiceNumber",
+      "status",
+      "total_minor" AS "totalMinor"
+    FROM "invoices"
+    WHERE "tenant_id" = ${tenantId}::uuid
+      AND "id" = ${invoiceId}::uuid
+      AND "deleted_at" IS NULL
+    FOR UPDATE
+  `;
+  const invoice = rows[0];
 
   if (!invoice) {
     throw invoiceNotFoundError();
   }
 
-  if (invoice.status !== InvoiceStatus.ISSUED) {
+  if (invoice.status !== InvoiceStatus.ISSUED && invoice.status !== InvoiceStatus.PARTIALLY_PAID) {
     throw paymentNotIssuableError();
   }
 
@@ -337,7 +344,7 @@ export async function createPayment(input: CreatePaymentInput): Promise<SafePaym
   paymentInvalidAmountCheck(input.amountMinor);
 
   const payment = await prisma.$transaction(async (tx) => {
-    const invoice = await loadInvoiceForPayment(tx, input.tenantId, input.invoiceId);
+    const invoice = await lockInvoiceForPayment(tx, input.tenantId, input.invoiceId);
     const paidAmountMinor = await currentPaidAmountMinor(tx, input.tenantId, invoice.id);
     const remainingBalanceMinor = invoice.totalMinor - paidAmountMinor;
 
@@ -418,6 +425,8 @@ export async function reversePayment(input: ReversePaymentInput): Promise<SafePa
     if (!existing) {
       throw paymentNotFoundError();
     }
+
+    await lockInvoiceForPayment(tx, input.tenantId, existing.invoiceId);
 
     if (existing.status !== PaymentStatus.POSTED) {
       throw paymentAlreadyReversedError();
