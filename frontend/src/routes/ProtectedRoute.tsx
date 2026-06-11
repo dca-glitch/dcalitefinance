@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { LoadingState } from '../components/states/LoadingState';
 import { useAuth } from '../hooks/useAuth';
 
 export function ProtectedRoute() {
@@ -6,11 +7,7 @@ export function ProtectedRoute() {
   const { isAuthenticated, isHydrated } = useAuth();
 
   if (!isHydrated) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-sm text-slate-400">
-        Restoring your session...
-      </div>
-    );
+    return <LoadingState fullscreen message="Restoring your session..." />;
   }
 
   if (!isAuthenticated) {

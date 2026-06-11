@@ -1,15 +1,25 @@
-import { Card } from '../components/ui/Card';
+import { AppPage } from '../components/page/AppPage';
+import { PageHeader } from '../components/page/PageHeader';
+import { PageSection } from '../components/page/PageSection';
+import { EmptyState } from '../components/states/EmptyState';
 
 export function DashboardPage() {
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6">
-      <Card>
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-400">DCA Books Lite</p>
-        <h1 className="mt-4 text-3xl font-semibold tracking-tight">Dashboard coming soon</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-          This is the protected app placeholder for the next phase.
-        </p>
-      </Card>
-    </div>
+    <AppPage>
+      <PageHeader
+        description="This protected workspace is ready for the first business modules. Shared layout, session display, and navigation are now in place."
+        eyebrow="DCA Books Lite"
+        title="Dashboard"
+      />
+      <PageSection
+        description="No business data is shown in this phase. The dashboard stays intentionally lightweight until module work begins."
+        title="Workspace status"
+      >
+        <EmptyState
+          message="Dashboard coming soon. Clients, projects, services, invoices, and payments will be added in later phases."
+          title="Dashboard coming soon"
+        />
+      </PageSection>
+    </AppPage>
   );
 }

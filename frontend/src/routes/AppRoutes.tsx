@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { LoadingState } from '../components/states/LoadingState';
 import { useAuth } from '../hooks/useAuth';
 import { AuthLayout } from '../layouts/AuthLayout';
 import { AppShell } from '../layouts/AppShell';
@@ -8,11 +9,7 @@ import { NotFoundPage } from '../pages/NotFoundPage';
 import { ProtectedRoute } from './ProtectedRoute';
 
 function RouteLoading() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-sm text-slate-400">
-      Restoring your session...
-    </div>
-  );
+  return <LoadingState fullscreen message="Restoring your session..." />;
 }
 
 function RootRedirect({ isAuthenticated }: { isAuthenticated: boolean }) {
