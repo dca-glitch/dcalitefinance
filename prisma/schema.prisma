@@ -33,6 +33,11 @@ enum ClientStatus {
   ARCHIVED
 }
 
+enum InvoiceStatus {
+  DRAFT
+  ARCHIVED
+}
+
 enum AuditActorType {
   USER
   SYSTEM
@@ -83,6 +88,9 @@ model Tenant {
   clients      Client[]
   projects     Project[]
   serviceItems ServiceItem[]
+  invoices     Invoice[]
+  invoiceSequences InvoiceSequence[]
+  invoiceLines InvoiceLine[]
   auditLogs    AuditLog[]
   authTokens   AuthToken[]
 
@@ -207,6 +215,7 @@ model Client {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   projects Project[]
+  invoices Invoice[]
 
   @@index([tenantId, status, deletedAt])
   @@index([tenantId, name])
@@ -227,6 +236,7 @@ model Project {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  invoices Invoice[]
 
   @@index([tenantId, deletedAt])
   @@index([tenantId, name])
@@ -246,11 +256,85 @@ model ServiceItem {
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  invoiceLines InvoiceLine[]
 
   @@index([tenantId, deletedAt])
   @@index([tenantId, name])
   @@index([tenantId, unitPriceMinor])
   @@map("service_items")
+}
+
+model InvoiceSequence {
+  id           String @id @default(uuid()) @db.Uuid
+  tenantId     String @map("tenant_id") @db.Uuid
+  invoiceYear  Int    @map("invoice_year")
+  currentValue Int    @default(0) @map("current_value")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, invoiceYear])
+  @@index([tenantId, invoiceYear])
+  @@map("invoice_sequences")
+}
+
+model Invoice {
+  id             String       @id @default(uuid()) @db.Uuid
+  tenantId       String       @map("tenant_id") @db.Uuid
+  clientId       String?      @map("client_id") @db.Uuid
+  projectId      String?      @map("project_id") @db.Uuid
+  invoiceNumber  String       @map("invoice_number") @db.VarChar(40)
+  invoiceYear    Int          @map("invoice_year")
+  invoiceSequence Int         @map("invoice_sequence")
+  status         InvoiceStatus @default(DRAFT)
+  issueDate      DateTime     @map("issue_date") @db.Date
+  dueDate        DateTime     @map("due_date") @db.Date
+  notes          String?      @db.Text
+  terms          String?      @db.Text
+  subtotalMinor  Int          @map("subtotal_minor")
+  totalMinor     Int          @map("total_minor")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  client  Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  lines   InvoiceLine[]
+
+  @@unique([tenantId, invoiceNumber])
+  @@unique([tenantId, invoiceYear, invoiceSequence])
+  @@index([tenantId, status, deletedAt])
+  @@index([tenantId, issueDate])
+  @@index([tenantId, clientId, deletedAt])
+  @@index([tenantId, projectId, deletedAt])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id            String  @id @default(uuid()) @db.Uuid
+  tenantId      String  @map("tenant_id") @db.Uuid
+  invoiceId     String  @map("invoice_id") @db.Uuid
+  serviceItemId String? @map("service_item_id") @db.Uuid
+  lineNumber    Int     @map("line_number")
+  description   String  @db.VarChar(300)
+  quantity      Int
+  unitPriceMinor Int    @map("unit_price_minor")
+  lineTotalMinor Int    @map("line_total_minor")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  invoice     Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  serviceItem ServiceItem? @relation(fields: [serviceItemId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, invoiceId])
+  @@index([tenantId, serviceItemId])
+  @@index([tenantId, invoiceId, lineNumber])
+  @@map("invoice_lines")
 }
 
 model Permission {
