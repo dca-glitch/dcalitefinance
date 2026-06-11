@@ -158,6 +158,9 @@ const invoiceSelect = {
     select: invoiceReferenceSelect,
   },
   lines: {
+    where: {
+      deletedAt: null,
+    },
     select: invoiceLineSelect,
     orderBy: {
       lineNumber: 'asc',
@@ -668,8 +671,10 @@ export async function updateInvoice(input: UpdateInvoiceInput): Promise<SafeInvo
     const dueDate = input.dueDate ?? existing.dueDate;
     validateDateRange(issueDate, dueDate);
 
-    const clientId = await validateClient(tx, input.tenantId, input.clientId ?? existing.clientId);
-    const projectId = await validateProject(tx, input.tenantId, input.projectId ?? existing.projectId);
+    const clientInput = input.clientId === undefined ? existing.clientId : input.clientId;
+    const projectInput = input.projectId === undefined ? existing.projectId : input.projectId;
+    const clientId = await validateClient(tx, input.tenantId, clientInput);
+    const projectId = await validateProject(tx, input.tenantId, projectInput);
     const serviceItemIds = await Promise.all(
       normalizedLines.map((line) => validateServiceItem(tx, input.tenantId, line.serviceItemId)),
     );
@@ -677,10 +682,14 @@ export async function updateInvoice(input: UpdateInvoiceInput): Promise<SafeInvo
     const subtotalMinor = normalizedLines.reduce((sum, line) => sum + line.lineTotalMinor, 0);
     const totalMinor = subtotalMinor;
 
-    await tx.invoiceLine.deleteMany({
+    await tx.invoiceLine.updateMany({
       where: {
         tenantId: input.tenantId,
         invoiceId: existing.id,
+        deletedAt: null,
+      },
+      data: {
+        deletedAt: new Date(),
       },
     });
 

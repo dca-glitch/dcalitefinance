@@ -325,13 +325,15 @@ model InvoiceLine {
   unitPriceMinor Int    @map("unit_price_minor")
   lineTotalMinor Int    @map("line_total_minor")
 
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   invoice     Invoice     @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
   serviceItem ServiceItem? @relation(fields: [serviceItemId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, invoiceId])
+  @@index([tenantId, invoiceId, deletedAt])
   @@index([tenantId, serviceItemId])
   @@index([tenantId, invoiceId, lineNumber])
   @@map("invoice_lines")
