@@ -4,6 +4,9 @@ import { useAuth } from '../hooks/useAuth';
 import { AuthLayout } from '../layouts/AuthLayout';
 import { AppShell } from '../layouts/AppShell';
 import { ClientsPage } from '../pages/ClientsPage';
+import { ServiceItemsPage } from '../pages/ServiceItemsPage';
+import { InvoicesPage } from '../pages/InvoicesPage';
+import { PaymentsPage } from '../pages/PaymentsPage';
 import { LoginPage } from '../pages/LoginPage';
 import { ProjectsPage } from '../pages/ProjectsPage';
 import { DashboardPage } from '../pages/DashboardPage';
@@ -42,6 +45,9 @@ export function AppRoutes() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="clients" element={<ClientsPage />} />
           <Route path="projects" element={<ProjectsPage />} />
+          <Route path="service-items" element={<ServiceItemsPage />} />
+          <Route path="invoices" element={<InvoicesPage />} />
+          <Route path="payments" element={<PaymentsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<NotFoundPage />} />
