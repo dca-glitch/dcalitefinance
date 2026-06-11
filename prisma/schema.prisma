@@ -47,6 +47,42 @@ enum PaymentStatus {
   REVERSED
 }
 
+enum FileAttachmentEntityType {
+  PAYMENT
+  BILL
+}
+
+enum StorageProvider {
+  LOCAL
+  GOOGLE_DRIVE
+}
+
+enum BillStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  ARCHIVED
+}
+
+enum RecurringInvoiceStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum RecurringInvoiceFrequency {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum RecurringInvoiceRunStatus {
+  SUCCESS
+  SKIPPED
+  FAILED
+}
+
 enum AuditActorType {
   USER
   SYSTEM
@@ -91,18 +127,25 @@ model Tenant {
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  memberships TenantMembership[] 
-  roles        Role[]
-  userRoles    UserRole[]
-  clients      Client[]
-  projects     Project[]
+  memberships TenantMembership[]
+  roles Role[]
+  userRoles UserRole[]
+  clients Client[]
+  projects Project[]
   serviceItems ServiceItem[]
-  invoices     Invoice[]
+  invoices Invoice[]
   invoiceSequences InvoiceSequence[]
   invoiceLines InvoiceLine[]
-  payments     Payment[]
-  auditLogs    AuditLog[]
-  authTokens   AuthToken[]
+  payments Payment[]
+  vendors Vendor[]
+  expenseCategories ExpenseCategory[]
+  bills Bill[]
+  recurringInvoices RecurringInvoice[]
+  recurringInvoiceLines RecurringInvoiceLine[]
+  recurringInvoiceRuns RecurringInvoiceRun[]
+  fileAttachments FileAttachment[]
+  auditLogs AuditLog[]
+  authTokens AuthToken[]
 
   @@index([status, deletedAt])
   @@map("tenants")
@@ -129,6 +172,7 @@ model User {
   auditLogs         AuditLog[]
   authTokens        AuthToken[] @relation("AuthTokenUser")
   createdAuthTokens AuthToken[] @relation("AuthTokenCreatedBy")
+  uploadedFileAttachments FileAttachment[]
 
   @@index([status, deletedAt])
   @@map("users")
@@ -226,6 +270,7 @@ model Client {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   projects Project[]
   invoices Invoice[]
+  recurringInvoices RecurringInvoice[]
 
   @@index([tenantId, status, deletedAt])
   @@index([tenantId, name])
@@ -247,6 +292,7 @@ model Project {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
   invoices Invoice[]
+  recurringInvoices RecurringInvoice[]
 
   @@index([tenantId, deletedAt])
   @@index([tenantId, name])
@@ -267,6 +313,7 @@ model ServiceItem {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   invoiceLines InvoiceLine[]
+  recurringInvoiceLines RecurringInvoiceLine[]
 
   @@index([tenantId, deletedAt])
   @@index([tenantId, name])
@@ -317,6 +364,7 @@ model Invoice {
   project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   lines   InvoiceLine[]
   payments Payment[]
+  generatedRecurringInvoiceRuns RecurringInvoiceRun[]
 
   @@unique([tenantId, invoiceNumber])
   @@unique([tenantId, invoiceYear, invoiceSequence])
@@ -376,6 +424,187 @@ model Payment {
   @@index([tenantId, paymentDate])
   @@index([tenantId, status, reversedAt])
   @@map("payments")
+}
+
+model Vendor {
+  id                 String  @id @default(uuid()) @db.Uuid
+  tenantId           String  @map("tenant_id") @db.Uuid
+  name               String  @db.VarChar(160)
+  email              String? @db.Citext
+  phone              String? @db.VarChar(40)
+  website            String? @db.VarChar(200)
+  taxId              String? @map("tax_id") @db.VarChar(80)
+  billingAddressLine1 String? @map("billing_address_line1") @db.VarChar(160)
+  billingAddressLine2 String? @map("billing_address_line2") @db.VarChar(160)
+  billingCity        String? @map("billing_city") @db.VarChar(120)
+  billingState       String? @map("billing_state") @db.VarChar(120)
+  billingPostalCode  String? @map("billing_postal_code") @db.VarChar(40)
+  billingCountry     String? @map("billing_country") @db.VarChar(120)
+  notes              String? @db.Text
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  bills  Bill[]
+
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, name])
+  @@index([tenantId, email])
+  @@map("vendors")
+}
+
+model ExpenseCategory {
+  id          String  @id @default(uuid()) @db.Uuid
+  tenantId    String  @map("tenant_id") @db.Uuid
+  name        String  @db.VarChar(160)
+  description String? @db.Text
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  bills  Bill[]
+
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, name])
+  @@map("expense_categories")
+}
+
+model Bill {
+  id                String    @id @default(uuid()) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  vendorId          String?   @map("vendor_id") @db.Uuid
+  categoryId        String?   @map("category_id") @db.Uuid
+  billNumber        String?   @map("bill_number") @db.VarChar(40)
+  billDate          DateTime  @map("bill_date") @db.Date
+  dueDate           DateTime? @map("due_date") @db.Date
+  status            BillStatus @default(DRAFT)
+  amountMinor       Int       @map("amount_minor")
+  paidAmountMinor   Int       @default(0) @map("paid_amount_minor")
+  balanceDueMinor   Int       @default(0) @map("balance_due_minor")
+  paymentMethod     String?   @map("payment_method") @db.VarChar(80)
+  paymentReference  String?   @map("payment_reference") @db.VarChar(120)
+  notes             String?   @db.Text
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  vendor   Vendor?           @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  category ExpenseCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, deletedAt])
+  @@index([tenantId, status, deletedAt])
+  @@index([tenantId, billDate])
+  @@index([tenantId, vendorId, deletedAt])
+  @@index([tenantId, categoryId, deletedAt])
+  @@map("bills")
+}
+
+model FileAttachment {
+  id               String                  @id @default(uuid()) @db.Uuid
+  tenantId         String                  @map("tenant_id") @db.Uuid
+  entityType       FileAttachmentEntityType @map("entity_type")
+  entityId         String                  @map("entity_id") @db.Uuid
+  originalFilename String                  @map("original_filename") @db.VarChar(255)
+  storedFilename   String                  @map("stored_filename") @db.VarChar(255)
+  mimeType         String                  @map("mime_type") @db.VarChar(120)
+  sizeBytes        Int                     @map("size_bytes")
+  storageProvider  StorageProvider         @map("storage_provider")
+  storageKey       String                  @map("storage_key") @db.VarChar(500)
+  checksumSha256   String?                 @map("checksum_sha256") @db.VarChar(64)
+  uploadedByUserId String                  @map("uploaded_by_user_id") @db.Uuid
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  uploadedBy  User   @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, entityType, entityId, deletedAt])
+  @@index([tenantId, storageProvider, deletedAt])
+  @@index([tenantId, uploadedByUserId, deletedAt])
+  @@map("file_attachments")
+}
+
+model RecurringInvoice {
+  id          String                     @id @default(uuid()) @db.Uuid
+  tenantId    String                     @map("tenant_id") @db.Uuid
+  clientId    String?                    @map("client_id") @db.Uuid
+  projectId   String?                    @map("project_id") @db.Uuid
+  status      RecurringInvoiceStatus     @default(ACTIVE)
+  frequency   RecurringInvoiceFrequency
+  startDate   DateTime                   @map("start_date") @db.Date
+  endDate     DateTime?                  @map("end_date") @db.Date
+  nextRunDate DateTime                   @map("next_run_date") @db.Date
+  lastRunDate DateTime?                  @map("last_run_date") @db.Date
+  notes       String?                    @db.Text
+  terms       String?                    @db.Text
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  client Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  lines  RecurringInvoiceLine[]
+  runs   RecurringInvoiceRun[]
+
+  @@index([tenantId, status, deletedAt])
+  @@index([tenantId, nextRunDate])
+  @@index([tenantId, clientId, deletedAt])
+  @@index([tenantId, projectId, deletedAt])
+  @@map("recurring_invoices")
+}
+
+model RecurringInvoiceLine {
+  id                 String  @id @default(uuid()) @db.Uuid
+  tenantId           String  @map("tenant_id") @db.Uuid
+  recurringInvoiceId  String  @map("recurring_invoice_id") @db.Uuid
+  serviceItemId      String? @map("service_item_id") @db.Uuid
+  lineNumber         Int     @map("line_number")
+  description        String  @db.VarChar(300)
+  quantity           Int
+  unitPriceMinor     Int     @map("unit_price_minor")
+  lineTotalMinor     Int     @map("line_total_minor")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  recurringInvoice RecurringInvoice  @relation(fields: [recurringInvoiceId], references: [id], onDelete: Restrict)
+  serviceItem     ServiceItem?      @relation(fields: [serviceItemId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, recurringInvoiceId])
+  @@index([tenantId, recurringInvoiceId, lineNumber])
+  @@index([tenantId, serviceItemId])
+  @@map("recurring_invoice_lines")
+}
+
+model RecurringInvoiceRun {
+  id                String                  @id @default(uuid()) @db.Uuid
+  tenantId          String                  @map("tenant_id") @db.Uuid
+  recurringInvoiceId String                  @map("recurring_invoice_id") @db.Uuid
+  scheduledFor      DateTime                @map("scheduled_for") @db.Date
+  generatedInvoiceId String?                @map("generated_invoice_id") @db.Uuid
+  status            RecurringInvoiceRunStatus
+  idempotencyKey    String                  @unique @map("idempotency_key") @db.VarChar(200)
+  errorMessage      String?                 @map("error_message") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  recurringInvoice RecurringInvoice  @relation(fields: [recurringInvoiceId], references: [id], onDelete: Restrict)
+  generatedInvoice Invoice?          @relation(fields: [generatedInvoiceId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, recurringInvoiceId])
+  @@index([tenantId, status])
+  @@index([tenantId, scheduledFor])
+  @@map("recurring_invoice_runs")
 }
 
 model Permission {
