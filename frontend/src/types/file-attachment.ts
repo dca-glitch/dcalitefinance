@@ -1,4 +1,4 @@
-export type FileAttachmentEntityType = 'PAYMENT' | 'BILL';
+export type FileAttachmentEntityType = 'PAYMENT' | 'BILL' | 'INVOICE';
 
 export interface FileAttachmentRecord {
   id: string;
@@ -8,6 +8,9 @@ export interface FileAttachmentRecord {
   mimeType: string;
   sizeBytes: number;
   storageProvider: string;
+  documentLink: string | null;
+  webViewLink: string | null;
+  webContentLink: string | null;
   uploadedByUserId: string;
   createdAt: string;
 }

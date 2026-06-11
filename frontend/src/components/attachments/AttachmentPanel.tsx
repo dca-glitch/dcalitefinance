@@ -43,6 +43,10 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getDocumentLink(attachment: FileAttachmentRecord): string | null {
+  return attachment.documentLink ?? attachment.webViewLink ?? attachment.webContentLink ?? null;
+}
+
 export function AttachmentPanel({
   accept,
   attachmentError = null,
@@ -119,11 +123,21 @@ export function AttachmentPanel({
                 className="flex flex-col gap-3 rounded-3xl border border-slate-800 bg-slate-950/40 px-4 py-4 lg:flex-row lg:items-center lg:justify-between"
                 key={attachment.id}
               >
-                <div>
+                <div className="space-y-1">
                   <div className="font-medium text-slate-50">{attachment.originalFilename}</div>
                   <div className="mt-1 text-sm text-slate-400">
                     {attachment.mimeType} - {formatFileSize(attachment.sizeBytes)} - {attachment.storageProvider} - {formatDate(attachment.createdAt)}
                   </div>
+                  {getDocumentLink(attachment) ? (
+                    <a
+                      className="inline-flex text-sm font-medium text-cyan-300 hover:text-cyan-200"
+                      href={getDocumentLink(attachment) ?? undefined}
+                      rel="noreferrer noopener"
+                      target="_blank"
+                    >
+                      Open document
+                    </a>
+                  ) : null}
                 </div>
                 <Button
                   loading={deletingAttachmentId === attachment.id}

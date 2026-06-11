@@ -109,6 +109,9 @@ export const apiClient = {
   post<T>(path: string, body?: JsonRequestBody, options?: RequestOptions) {
     return request<T>('POST', path, { ...options, body });
   },
+  put<T>(path: string, body?: JsonRequestBody, options?: RequestOptions) {
+    return request<T>('PUT', path, { ...options, body });
+  },
   patch<T>(path: string, body?: JsonRequestBody, options?: RequestOptions) {
     return request<T>('PATCH', path, { ...options, body });
   },

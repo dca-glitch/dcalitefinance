@@ -10,6 +10,14 @@ export const appNavigation: NavigationItem[] = [
     showInMobileNav: true,
   },
   {
+    label: 'Company Settings',
+    path: '/app/issuer-profile',
+    status: 'active',
+    description: 'Manage issuer profile and fixed tenant currency',
+    showInSidebar: true,
+    showInMobileNav: true,
+  },
+  {
     label: 'Clients',
     path: '/app/clients',
     status: 'active',

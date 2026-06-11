@@ -5,9 +5,11 @@ import { PageSection } from '../components/page/PageSection';
 import { EmptyState } from '../components/states/EmptyState';
 import { ErrorState } from '../components/states/ErrorState';
 import { LoadingState } from '../components/states/LoadingState';
+import { InvoiceDocumentsPanel } from '../components/invoices/InvoiceDocumentsPanel';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { archiveInvoice, cancelInvoice, createInvoice, issueInvoice, listInvoices } from '../lib/invoices-api';
+import { generateInvoicePdf, listInvoiceDocuments } from '../lib/invoice-documents-api';
 import { listClients } from '../lib/clients-api';
 import { listProjects } from '../lib/projects-api';
 import { listServiceItems } from '../lib/service-items-api';
@@ -21,6 +23,7 @@ import type {
   InvoiceListItem,
   InvoiceStatus,
 } from '../types/invoice';
+import type { InvoiceDocumentRecord } from '../types/invoice-document';
 
 interface InvoiceFormLineState {
   description: string;
@@ -237,6 +240,11 @@ export function InvoicesPage() {
   const [issueLoadingId, setIssueLoadingId] = useState<string | null>(null);
   const [cancelLoadingId, setCancelLoadingId] = useState<string | null>(null);
   const [archiveLoadingId, setArchiveLoadingId] = useState<string | null>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<InvoiceDocumentRecord[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+  const [generateLoadingId, setGenerateLoadingId] = useState<string | null>(null);
   const [searchDraft, setSearchDraft] = useState('');
   const [activeSearch, setActiveSearch] = useState('');
   const [form, setForm] = useState<InvoiceFormState>(() => buildInitialForm());
@@ -274,6 +282,21 @@ export function InvoicesPage() {
     }
   }
 
+  async function loadInvoiceDocuments(invoiceId: string) {
+    setDocumentsLoading(true);
+    setDocumentsError(null);
+
+    try {
+      const invoiceDocuments = await listInvoiceDocuments(invoiceId);
+      setDocuments(invoiceDocuments);
+    } catch (error) {
+      setDocuments([]);
+      setDocumentsError(error instanceof Error ? error.message : 'Failed to load invoice documents');
+    } finally {
+      setDocumentsLoading(false);
+    }
+  }
+
   useEffect(() => {
     void loadInvoicesPage(activeSearch);
   }, [activeTenant?.id, activeSearch]);
@@ -281,6 +304,24 @@ export function InvoicesPage() {
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, []);
+
+  useEffect(() => {
+    if (!selectedInvoiceId) {
+      setDocuments([]);
+      setDocumentsError(null);
+      setDocumentsLoading(false);
+      return;
+    }
+
+    const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId);
+    if (!selectedInvoice) {
+      setDocuments([]);
+      setDocumentsError(null);
+      return;
+    }
+
+    void loadInvoiceDocuments(selectedInvoice.id);
+  }, [invoices, selectedInvoiceId]);
 
   function updateForm(nextForm: InvoiceFormState | ((current: InvoiceFormState) => InvoiceFormState)) {
     setForm(nextForm);
@@ -361,7 +402,8 @@ export function InvoicesPage() {
         lines,
       };
 
-      await createInvoice(payload);
+      const createdInvoice = await createInvoice(payload);
+      setSelectedInvoiceId(createdInvoice.id);
       setForm(buildInitialForm());
       await loadInvoicesPage(activeSearch);
     } catch (error) {
@@ -412,11 +454,35 @@ export function InvoicesPage() {
 
     try {
       await archiveInvoice(invoice.id);
+      if (selectedInvoiceId === invoice.id) {
+        setSelectedInvoiceId(null);
+        setDocuments([]);
+        setDocumentsError(null);
+      }
       await loadInvoicesPage(activeSearch);
     } catch (error) {
       setPageError(error instanceof Error ? error.message : 'Unable to archive invoice');
     } finally {
       setArchiveLoadingId(null);
+    }
+  }
+
+  async function handleGeneratePdf(invoice: InvoiceListItem) {
+    setGenerateLoadingId(invoice.id);
+    setDocumentsError(null);
+
+    try {
+      await generateInvoicePdf(invoice.id);
+      await loadInvoiceDocuments(invoice.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to generate invoice PDF';
+      if (message.includes('Issuer profile is required before generating invoice PDFs')) {
+        setDocumentsError('Set up Company Settings before generating invoice PDFs.');
+      } else {
+        setDocumentsError(message);
+      }
+    } finally {
+      setGenerateLoadingId(null);
     }
   }
 
@@ -429,6 +495,11 @@ export function InvoicesPage() {
     const selectedClient = clients.find((client) => client.id === form.clientId);
     return selectedClient?.name ?? 'No client';
   }, [clients, form.clientId]);
+
+  const selectedInvoice = useMemo(
+    () => invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? null,
+    [invoices, selectedInvoiceId],
+  );
 
   return (
     <AppPage>
@@ -651,6 +722,12 @@ export function InvoicesPage() {
                       </td>
                       <td className="px-6 py-5">
                         <div className="flex flex-wrap gap-2">
+                          <Button
+                            onClick={() => setSelectedInvoiceId(invoice.id)}
+                            variant={selectedInvoiceId === invoice.id ? 'primary' : 'secondary'}
+                          >
+                            Documents
+                          </Button>
                           {canIssue(invoice.status) ? (
                             <Button loading={issueLoadingId === invoice.id} onClick={() => void handleIssue(invoice)}>
                               Issue
@@ -684,6 +761,23 @@ export function InvoicesPage() {
           </div>
         ) : null}
       </PageSection>
+
+      {selectedInvoice ? (
+        <PageSection
+          description="Generate invoice PDFs and review safe document metadata. External links open in a new tab when available."
+          title={`Invoice documents - ${selectedInvoice.invoiceNumber}`}
+        >
+          <InvoiceDocumentsPanel
+            documents={documents}
+            error={documentsError}
+            generating={generateLoadingId === selectedInvoice.id}
+            invoice={selectedInvoice}
+            loading={documentsLoading}
+            onGeneratePdf={() => void handleGeneratePdf(selectedInvoice)}
+            onRefresh={() => void loadInvoiceDocuments(selectedInvoice.id)}
+          />
+        </PageSection>
+      ) : null}
     </AppPage>
   );
 }
