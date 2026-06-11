@@ -60,6 +60,10 @@ export interface InvoiceData {
   invoice: InvoiceRecord;
 }
 
+export interface InvoicePreviewData {
+  invoice: InvoiceRecord;
+}
+
 export interface ListInvoicesParams {
   search?: string;
   page?: number;
@@ -82,6 +86,8 @@ export interface InvoiceCreateInput {
   terms?: string | null;
   lines: InvoiceLineInput[];
 }
+
+export interface InvoiceUpdateInput extends InvoiceCreateInput {}
 
 export interface InvoiceCancelInput {
   reason?: string | null;

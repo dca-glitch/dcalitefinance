@@ -4,9 +4,11 @@ import type {
   InvoiceCancelInput,
   InvoiceCreateInput,
   InvoiceData,
+  InvoicePreviewData,
   InvoicesListData,
   ListInvoicesParams,
   InvoiceRecord,
+  InvoiceUpdateInput,
 } from '../types/invoice';
 
 function assertSuccess<T>(response: ApiResponse<T>): T {
@@ -43,6 +45,16 @@ export async function listInvoices(params: ListInvoicesParams = {}): Promise<Inv
 
 export async function createInvoice(input: InvoiceCreateInput): Promise<InvoiceRecord> {
   const response = await apiClient.post<ApiResponse<InvoiceData>>('/invoices', input);
+  return assertSuccess(response).invoice;
+}
+
+export async function getInvoice(invoiceId: string): Promise<InvoiceRecord> {
+  const response = await apiClient.get<ApiResponse<InvoicePreviewData>>(`/invoices/${invoiceId}`);
+  return assertSuccess(response).invoice;
+}
+
+export async function updateInvoice(invoiceId: string, input: InvoiceUpdateInput): Promise<InvoiceRecord> {
+  const response = await apiClient.patch<ApiResponse<InvoiceData>>(`/invoices/${invoiceId}`, input);
   return assertSuccess(response).invoice;
 }
 

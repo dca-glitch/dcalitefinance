@@ -5,25 +5,28 @@ import { PageSection } from '../components/page/PageSection';
 import { EmptyState } from '../components/states/EmptyState';
 import { ErrorState } from '../components/states/ErrorState';
 import { LoadingState } from '../components/states/LoadingState';
-import { InvoiceDocumentsPanel } from '../components/invoices/InvoiceDocumentsPanel';
+import { InvoicePreviewPanel } from '../components/invoices/InvoicePreviewPanel';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { archiveInvoice, cancelInvoice, createInvoice, issueInvoice, listInvoices } from '../lib/invoices-api';
-import { generateInvoicePdf, listInvoiceDocuments } from '../lib/invoice-documents-api';
 import { listClients } from '../lib/clients-api';
+import { archiveInvoice, cancelInvoice, createInvoice, getInvoice, issueInvoice, listInvoices, updateInvoice } from '../lib/invoices-api';
+import { generateInvoicePdf, listInvoiceDocuments } from '../lib/invoice-documents-api';
+import { getIssuerProfile } from '../lib/issuer-profile-api';
 import { listProjects } from '../lib/projects-api';
 import { listServiceItems } from '../lib/service-items-api';
 import { useAuth } from '../hooks/useAuth';
 import type { ClientRecord } from '../types/client';
+import type { InvoiceDocumentRecord } from '../types/invoice-document';
+import type { IssuerProfileRecord } from '../types/issuer-profile';
 import type { ProjectRecord } from '../types/project';
 import type { ServiceItemRecord } from '../types/service-item';
 import type {
   InvoiceCreateInput,
   InvoiceLineInput,
   InvoiceListItem,
+  InvoiceRecord,
   InvoiceStatus,
 } from '../types/invoice';
-import type { InvoiceDocumentRecord } from '../types/invoice-document';
 
 interface InvoiceFormLineState {
   description: string;
@@ -116,6 +119,25 @@ function buildInitialForm(): InvoiceFormState {
   };
 }
 
+function buildFormFromInvoice(invoice: InvoiceRecord): InvoiceFormState {
+  return {
+    issueDate: invoice.issueDate.slice(0, 10),
+    dueDate: invoice.dueDate.slice(0, 10),
+    clientId: invoice.clientId ?? '',
+    projectId: invoice.projectId ?? '',
+    notes: invoice.notes ?? '',
+    terms: invoice.terms ?? '',
+    lines: invoice.lines.length
+      ? invoice.lines.map((line) => ({
+          description: line.description,
+          quantity: String(line.quantity),
+          unitPrice: String(line.unitPriceMinor / 100),
+          serviceItemId: line.serviceItemId ?? '',
+        }))
+      : [buildBlankLine()],
+  };
+}
+
 function statusLabel(status: InvoiceStatus): string {
   switch (status) {
     case 'DRAFT':
@@ -135,16 +157,12 @@ function statusLabel(status: InvoiceStatus): string {
   }
 }
 
-function canIssue(status: InvoiceStatus): boolean {
+function isDraft(status: InvoiceStatus): boolean {
   return status === 'DRAFT';
 }
 
-function canCancel(status: InvoiceStatus): boolean {
-  return status === 'ISSUED';
-}
-
-function canArchive(status: InvoiceStatus): boolean {
-  return status === 'DRAFT';
+function isIssued(status: InvoiceStatus): boolean {
+  return status === 'ISSUED' || status === 'PARTIALLY_PAID' || status === 'PAID';
 }
 
 function InvoiceLinesEditor({
@@ -227,20 +245,71 @@ function InvoiceLinesEditor({
   );
 }
 
+function buildInvoicePayload(form: InvoiceFormState): InvoiceCreateInput {
+  const issueDate = form.issueDate.trim();
+  const dueDate = form.dueDate.trim();
+
+  if (!issueDate || !dueDate) {
+    throw new Error('Issue date and due date are required.');
+  }
+
+  const lines: InvoiceLineInput[] = form.lines.map((line, index) => {
+    const description = line.description.trim();
+    const quantity = Number(line.quantity);
+    const unitPriceMinor = parseMinorAmount(line.unitPrice);
+
+    if (!description) {
+      throw new Error(`Line ${index + 1} requires a description.`);
+    }
+
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      throw new Error(`Line ${index + 1} requires a quantity of at least 1.`);
+    }
+
+    if (unitPriceMinor === null) {
+      throw new Error(`Line ${index + 1} requires a valid unit price.`);
+    }
+
+    return {
+      description,
+      quantity,
+      unitPriceMinor,
+      serviceItemId: normalizeOptionalValue(line.serviceItemId),
+    };
+  });
+
+  return {
+    issueDate,
+    dueDate,
+    clientId: normalizeOptionalValue(form.clientId),
+    projectId: normalizeOptionalValue(form.projectId),
+    notes: normalizeOptionalValue(form.notes),
+    terms: normalizeOptionalValue(form.terms),
+    lines,
+  };
+}
+
 export function InvoicesPage() {
   const { activeTenant } = useAuth();
   const [clients, setClients] = useState<ClientRecord[]>([]);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [serviceItems, setServiceItems] = useState<ServiceItemRecord[]>([]);
+  const [issuerProfile, setIssuerProfile] = useState<IssuerProfileRecord | null>(null);
   const [invoices, setInvoices] = useState<InvoiceListItem[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [issuerProfileLoading, setIssuerProfileLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewMessage, setPreviewMessage] = useState<string | null>(null);
   const [formLoading, setFormLoading] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [issueLoadingId, setIssueLoadingId] = useState<string | null>(null);
   const [cancelLoadingId, setCancelLoadingId] = useState<string | null>(null);
   const [archiveLoadingId, setArchiveLoadingId] = useState<string | null>(null);
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [previewInvoice, setPreviewInvoice] = useState<InvoiceRecord | null>(null);
   const [documents, setDocuments] = useState<InvoiceDocumentRecord[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
@@ -256,29 +325,61 @@ export function InvoicesPage() {
       setClients([]);
       setProjects([]);
       setServiceItems([]);
+      setIssuerProfile(null);
       setPageError('No active tenant context is available for invoices.');
       setInitialLoading(false);
+      setIssuerProfileLoading(false);
       return;
     }
 
     setPageError(null);
 
     try {
-      const [invoiceResult, clientsResult, projectsResult, serviceItemsResult] = await Promise.all([
+      const [invoiceResult, clientsResult, projectsResult, serviceItemsResult, issuerProfileResult] = await Promise.all([
         listInvoices({ search: search || undefined, limit: 100 }),
         listClients({ limit: 100 }),
         listProjects({ limit: 100 }),
         listServiceItems({ limit: 100 }),
+        getIssuerProfile(),
       ]);
 
       setInvoices(invoiceResult.invoices);
       setClients(clientsResult.clients);
       setProjects(projectsResult.projects);
       setServiceItems(serviceItemsResult.serviceItems);
+      setIssuerProfile(issuerProfileResult);
     } catch (error) {
       setPageError(error instanceof Error ? error.message : 'Failed to load invoices');
     } finally {
       setInitialLoading(false);
+      setIssuerProfileLoading(false);
+    }
+  }
+
+  async function loadInvoicePreview(invoiceId: string) {
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreviewMessage(null);
+    setDocumentsError(null);
+
+    try {
+      const invoice = await getInvoice(invoiceId);
+      setPreviewInvoice(invoice);
+      setSelectedInvoiceId(invoice.id);
+
+      if (isIssued(invoice.status)) {
+        const invoiceDocuments = await listInvoiceDocuments(invoice.id);
+        setDocuments(invoiceDocuments);
+      } else {
+        setDocuments([]);
+      }
+    } catch (error) {
+      setPreviewInvoice(null);
+      setDocuments([]);
+      setPreviewError(error instanceof Error ? error.message : 'Failed to load invoice preview');
+    } finally {
+      setPreviewLoading(false);
+      setDocumentsLoading(false);
     }
   }
 
@@ -287,8 +388,8 @@ export function InvoicesPage() {
     setDocumentsError(null);
 
     try {
-      const invoiceDocuments = await listInvoiceDocuments(invoiceId);
-      setDocuments(invoiceDocuments);
+      const result = await listInvoiceDocuments(invoiceId);
+      setDocuments(result);
     } catch (error) {
       setDocuments([]);
       setDocumentsError(error instanceof Error ? error.message : 'Failed to load invoice documents');
@@ -305,44 +406,22 @@ export function InvoicesPage() {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, []);
 
-  useEffect(() => {
-    if (!selectedInvoiceId) {
-      setDocuments([]);
-      setDocumentsError(null);
-      setDocumentsLoading(false);
-      return;
-    }
-
-    const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId);
-    if (!selectedInvoice) {
-      setDocuments([]);
-      setDocumentsError(null);
-      return;
-    }
-
-    void loadInvoiceDocuments(selectedInvoice.id);
-  }, [invoices, selectedInvoiceId]);
-
-  function updateForm(nextForm: InvoiceFormState | ((current: InvoiceFormState) => InvoiceFormState)) {
-    setForm(nextForm);
-  }
-
   function updateLine(index: number, nextLine: InvoiceFormLineState) {
-    updateForm((current) => ({
+    setForm((current) => ({
       ...current,
       lines: current.lines.map((line, lineIndex) => (lineIndex === index ? nextLine : line)),
     }));
   }
 
   function addLine() {
-    updateForm((current) => ({
+    setForm((current) => ({
       ...current,
       lines: [...current.lines, buildBlankLine()],
     }));
   }
 
   function removeLine(index: number) {
-    updateForm((current) => {
+    setForm((current) => {
       if (current.lines.length === 1) {
         return current;
       }
@@ -360,52 +439,25 @@ export function InvoicesPage() {
     setFormError(null);
 
     try {
-      const issueDate = form.issueDate.trim();
-      const dueDate = form.dueDate.trim();
+      const payload = buildInvoicePayload(form);
 
-      if (!issueDate || !dueDate) {
-        throw new Error('Issue date and due date are required.');
+      if (editingInvoiceId) {
+        const updatedInvoice = await updateInvoice(editingInvoiceId, payload);
+        setPreviewInvoice(updatedInvoice);
+        setSelectedInvoiceId(updatedInvoice.id);
+        setPreviewMessage('Draft invoice updated.');
+        setEditingInvoiceId(null);
+        setForm(buildInitialForm());
+        await loadInvoicesPage(activeSearch);
+        return;
       }
-
-      const lines: InvoiceLineInput[] = form.lines.map((line, index) => {
-        const description = line.description.trim();
-        const quantity = Number(line.quantity);
-        const unitPriceMinor = parseMinorAmount(line.unitPrice);
-
-        if (!description) {
-          throw new Error(`Line ${index + 1} requires a description.`);
-        }
-
-        if (!Number.isInteger(quantity) || quantity < 1) {
-          throw new Error(`Line ${index + 1} requires a quantity of at least 1.`);
-        }
-
-        if (unitPriceMinor === null) {
-          throw new Error(`Line ${index + 1} requires a valid unit price.`);
-        }
-
-        return {
-          description,
-          quantity,
-          unitPriceMinor,
-          serviceItemId: normalizeOptionalValue(line.serviceItemId),
-        };
-      });
-
-      const payload: InvoiceCreateInput = {
-        issueDate,
-        dueDate,
-        clientId: normalizeOptionalValue(form.clientId),
-        projectId: normalizeOptionalValue(form.projectId),
-        notes: normalizeOptionalValue(form.notes),
-        terms: normalizeOptionalValue(form.terms),
-        lines,
-      };
 
       const createdInvoice = await createInvoice(payload);
       setSelectedInvoiceId(createdInvoice.id);
       setForm(buildInitialForm());
       await loadInvoicesPage(activeSearch);
+      await loadInvoicePreview(createdInvoice.id);
+      setPreviewMessage('Draft invoice created. Review it before issuing.');
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Unable to save invoice');
     } finally {
@@ -413,17 +465,92 @@ export function InvoicesPage() {
     }
   }
 
-  async function handleIssue(invoice: InvoiceListItem) {
-    setIssueLoadingId(invoice.id);
-    setPageError(null);
+  async function handlePreview(invoice: InvoiceListItem) {
+    setSelectedInvoiceId(invoice.id);
+    await loadInvoicePreview(invoice.id);
+  }
+
+  async function handleStartEdit(invoiceId: string) {
+    setPreviewError(null);
+    setPreviewMessage(null);
 
     try {
-      await issueInvoice(invoice.id);
-      await loadInvoicesPage(activeSearch);
+      const invoice = previewInvoice?.id === invoiceId ? previewInvoice : await getInvoice(invoiceId);
+      if (invoice.status !== 'DRAFT') {
+        setFormError('Only draft invoices can be edited.');
+        return;
+      }
+
+      setEditingInvoiceId(invoice.id);
+      setSelectedInvoiceId(invoice.id);
+      setPreviewInvoice(invoice);
+      setDocuments([]);
+      setDocumentsError(null);
+      setForm(buildFormFromInvoice(invoice));
+      setFormError(null);
+      formContainerRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
     } catch (error) {
-      setPageError(error instanceof Error ? error.message : 'Unable to issue invoice');
+      setFormError(error instanceof Error ? error.message : 'Unable to load invoice for editing');
+    }
+  }
+
+  async function handleConfirmIssue(invoiceId: string) {
+    if (!issuerProfile) {
+      setPreviewError('Set up Company Settings before issuing invoices.');
+      return;
+    }
+
+    const currentPreview = previewInvoice?.id === invoiceId ? previewInvoice : null;
+    if (currentPreview && !isDraft(currentPreview.status)) {
+      setPreviewError('Invoice can only be issued while draft.');
+      return;
+    }
+
+    setIssueLoadingId(invoiceId);
+    setPreviewError(null);
+    setPreviewMessage(null);
+
+    try {
+      const issuedInvoice = await issueInvoice(invoiceId);
+      setPreviewInvoice(issuedInvoice);
+      setSelectedInvoiceId(issuedInvoice.id);
+      await generateInvoicePdf(invoiceId);
+      await loadInvoicesPage(activeSearch);
+      await loadInvoicePreview(invoiceId);
+      setPreviewMessage('Invoice issued and PDF generated.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to issue invoice';
+      if (message.includes('Issuer profile is required before generating invoice PDFs')) {
+        setPreviewError('Set up Company Settings before issuing invoices.');
+      } else if (message.includes('Invoice can only be issued while draft')) {
+        setPreviewError('Invoice can only be issued while draft.');
+      } else {
+        setPreviewError(message);
+      }
     } finally {
       setIssueLoadingId(null);
+    }
+  }
+
+  async function handleGeneratePdf(invoice: InvoiceRecord) {
+    setGenerateLoadingId(invoice.id);
+    setDocumentsError(null);
+
+    try {
+      await generateInvoicePdf(invoice.id);
+      await loadInvoicePreview(invoice.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to generate invoice PDF';
+      if (message.includes('Issuer profile is required before generating invoice PDFs')) {
+        setDocumentsError('Set up Company Settings before generating invoice PDFs.');
+      } else {
+        setDocumentsError(message);
+      }
+    } finally {
+      setGenerateLoadingId(null);
     }
   }
 
@@ -435,6 +562,14 @@ export function InvoicesPage() {
 
     try {
       await cancelInvoice(invoice.id, reason ? { reason } : {});
+      if (selectedInvoiceId === invoice.id || previewInvoice?.id === invoice.id) {
+        setSelectedInvoiceId(null);
+        setPreviewInvoice(null);
+        setDocuments([]);
+        setDocumentsError(null);
+        setPreviewError(null);
+        setPreviewMessage(null);
+      }
       await loadInvoicesPage(activeSearch);
     } catch (error) {
       setPageError(error instanceof Error ? error.message : 'Unable to cancel invoice');
@@ -454,35 +589,23 @@ export function InvoicesPage() {
 
     try {
       await archiveInvoice(invoice.id);
-      if (selectedInvoiceId === invoice.id) {
+      if (selectedInvoiceId === invoice.id || previewInvoice?.id === invoice.id) {
         setSelectedInvoiceId(null);
+        setPreviewInvoice(null);
         setDocuments([]);
         setDocumentsError(null);
+        setPreviewError(null);
+        setPreviewMessage(null);
+      }
+      if (editingInvoiceId === invoice.id) {
+        setEditingInvoiceId(null);
+        setForm(buildInitialForm());
       }
       await loadInvoicesPage(activeSearch);
     } catch (error) {
       setPageError(error instanceof Error ? error.message : 'Unable to archive invoice');
     } finally {
       setArchiveLoadingId(null);
-    }
-  }
-
-  async function handleGeneratePdf(invoice: InvoiceListItem) {
-    setGenerateLoadingId(invoice.id);
-    setDocumentsError(null);
-
-    try {
-      await generateInvoicePdf(invoice.id);
-      await loadInvoiceDocuments(invoice.id);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to generate invoice PDF';
-      if (message.includes('Issuer profile is required before generating invoice PDFs')) {
-        setDocumentsError('Set up Company Settings before generating invoice PDFs.');
-      } else {
-        setDocumentsError(message);
-      }
-    } finally {
-      setGenerateLoadingId(null);
     }
   }
 
@@ -496,23 +619,43 @@ export function InvoicesPage() {
     return selectedClient?.name ?? 'No client';
   }, [clients, form.clientId]);
 
-  const selectedInvoice = useMemo(
-    () => invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? null,
-    [invoices, selectedInvoiceId],
-  );
+  const previewClient = useMemo(() => {
+    if (!previewInvoice?.clientId) {
+      return null;
+    }
+
+    return clients.find((client) => client.id === previewInvoice.clientId) ?? null;
+  }, [clients, previewInvoice?.clientId]);
 
   return (
     <AppPage>
       <PageHeader
-        description={`Create and manage invoices for ${tenantLabel}. The UI stays intentionally simple and desktop-only for the launch.`}
+        description={`Create draft invoices for ${tenantLabel}, preview them before issuing, then generate the final PDF after confirmation.`}
         eyebrow="DCA Books Lite"
         title="Invoices"
       />
 
       <PageSection
-        description="Create a simple invoice with dated lines, then issue, cancel, or archive it from the list below."
-        title="Create invoice"
+        description="Create or edit a draft invoice, then preview it before final issue."
+        title={editingInvoiceId ? 'Edit draft invoice' : 'Create invoice'}
       >
+        {editingInvoiceId ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
+            <span>Editing a draft invoice. Save changes or cancel edit to create a new invoice.</span>
+            <Button
+              onClick={() => {
+                setEditingInvoiceId(null);
+                setForm(buildInitialForm());
+                setFormError(null);
+              }}
+              type="button"
+              variant="secondary"
+            >
+              Cancel edit
+            </Button>
+          </div>
+        ) : null}
+
         <div ref={formContainerRef}>
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div className="grid gap-4 lg:grid-cols-2">
@@ -613,7 +756,7 @@ export function InvoicesPage() {
 
             <div className="flex flex-wrap items-center gap-3">
               <Button loading={formLoading} type="submit">
-                Create invoice
+                {editingInvoiceId ? 'Save draft changes' : 'Create invoice'}
               </Button>
               <div className="rounded-full border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs uppercase tracking-[0.2em] text-slate-500">
                 Client: {selectedClientLabel}
@@ -659,7 +802,7 @@ export function InvoicesPage() {
         description="Invoice records are tenant-scoped and reflect the current workflow state."
         title="Invoice list"
       >
-        {initialLoading ? <LoadingState message="Loading invoices..." /> : null}
+        {initialLoading || issuerProfileLoading ? <LoadingState message="Loading invoices..." /> : null}
 
         {!initialLoading && pageError ? (
           <ErrorState
@@ -699,9 +842,7 @@ export function InvoicesPage() {
                     <tr className="align-top" key={invoice.id}>
                       <td className="px-6 py-5">
                         <div className="font-medium text-slate-50">{invoice.invoiceNumber}</div>
-                        <p className="mt-1 text-sm text-slate-400">
-                          {invoice.notes?.trim() ? invoice.notes : 'No notes'}
-                        </p>
+                        <p className="mt-1 text-sm text-slate-400">{invoice.notes?.trim() ? invoice.notes : 'No notes'}</p>
                       </td>
                       <td className="px-6 py-5 text-sm text-slate-300">
                         <div>{invoice.client?.name ?? 'No client'}</div>
@@ -723,31 +864,23 @@ export function InvoicesPage() {
                       <td className="px-6 py-5">
                         <div className="flex flex-wrap gap-2">
                           <Button
-                            onClick={() => setSelectedInvoiceId(invoice.id)}
+                            onClick={() => void handlePreview(invoice)}
                             variant={selectedInvoiceId === invoice.id ? 'primary' : 'secondary'}
                           >
-                            Documents
+                            Preview
                           </Button>
-                          {canIssue(invoice.status) ? (
-                            <Button loading={issueLoadingId === invoice.id} onClick={() => void handleIssue(invoice)}>
-                              Issue
+                          {isDraft(invoice.status) ? (
+                            <Button onClick={() => void handleStartEdit(invoice.id)} variant="secondary">
+                              Edit
                             </Button>
                           ) : null}
-                          {canCancel(invoice.status) ? (
-                            <Button
-                              loading={cancelLoadingId === invoice.id}
-                              onClick={() => void handleCancel(invoice)}
-                              variant="secondary"
-                            >
+                          {invoice.status === 'ISSUED' ? (
+                            <Button loading={cancelLoadingId === invoice.id} onClick={() => void handleCancel(invoice)} variant="secondary">
                               Cancel
                             </Button>
                           ) : null}
-                          {canArchive(invoice.status) ? (
-                            <Button
-                              loading={archiveLoadingId === invoice.id}
-                              onClick={() => void handleArchive(invoice)}
-                              variant="secondary"
-                            >
+                          {isDraft(invoice.status) ? (
+                            <Button loading={archiveLoadingId === invoice.id} onClick={() => void handleArchive(invoice)} variant="secondary">
                               Archive
                             </Button>
                           ) : null}
@@ -762,19 +895,28 @@ export function InvoicesPage() {
         ) : null}
       </PageSection>
 
-      {selectedInvoice ? (
+      {previewLoading && !previewInvoice ? <LoadingState message="Loading invoice preview..." /> : null}
+
+      {previewInvoice ? (
         <PageSection
-          description="Generate invoice PDFs and review safe document metadata. External links open in a new tab when available."
-          title={`Invoice documents - ${selectedInvoice.invoiceNumber}`}
+          description="Preview the invoice before final issue. Issued invoices show the final PDF document links below."
+          title={`Invoice preview - ${previewInvoice.invoiceNumber}`}
         >
-          <InvoiceDocumentsPanel
+          <InvoicePreviewPanel
+            client={previewClient}
             documents={documents}
-            error={documentsError}
-            generating={generateLoadingId === selectedInvoice.id}
-            invoice={selectedInvoice}
-            loading={documentsLoading}
-            onGeneratePdf={() => void handleGeneratePdf(selectedInvoice)}
-            onRefresh={() => void loadInvoiceDocuments(selectedInvoice.id)}
+            documentsError={documentsError}
+            documentsLoading={documentsLoading}
+            error={previewError}
+            generatingLoading={generateLoadingId === previewInvoice.id}
+            issueLoading={issueLoadingId === previewInvoice.id}
+            invoice={previewInvoice}
+            issuerProfile={issuerProfile}
+            onConfirmIssue={() => void handleConfirmIssue(previewInvoice.id)}
+            onEditDraft={() => void handleStartEdit(previewInvoice.id)}
+            onGeneratePdf={() => void handleGeneratePdf(previewInvoice)}
+            onRefreshDocuments={() => void loadInvoiceDocuments(previewInvoice.id)}
+            statusMessage={previewMessage}
           />
         </PageSection>
       ) : null}
