@@ -32,6 +32,13 @@ export function createApp(): express.Express {
     legacyHeaders: false,
   });
 
+  const appApiRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 600,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+  });
+
   const loginRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 5,
@@ -54,13 +61,14 @@ export function createApp(): express.Express {
   app.use(env.API_PREFIX + '/auth/login', loginRateLimiter);
   app.use(env.API_PREFIX + '/auth', authRateLimiter, authRoutes);
   app.use(env.API_PREFIX + '/invitations', authRateLimiter, invitationsRoutes);
-  app.use(env.API_PREFIX + '/tenant', authRateLimiter, tenantRoutes);
-  app.use(env.API_PREFIX + '/clients', authRateLimiter, clientsRoutes);
-  app.use(env.API_PREFIX + '/projects', authRateLimiter, projectsRoutes);
-  app.use(env.API_PREFIX + '/service-items', authRateLimiter, serviceItemsRoutes);
-  app.use(env.API_PREFIX + '/invoices', authRateLimiter, invoicesRoutes);
-  app.use(env.API_PREFIX + '/payments', authRateLimiter, paymentsRoutes);
-  app.use(env.API_PREFIX + '/roles', authRateLimiter, rolesRoutes);
+
+  app.use(env.API_PREFIX + '/tenant', appApiRateLimiter, tenantRoutes);
+  app.use(env.API_PREFIX + '/clients', appApiRateLimiter, clientsRoutes);
+  app.use(env.API_PREFIX + '/projects', appApiRateLimiter, projectsRoutes);
+  app.use(env.API_PREFIX + '/service-items', appApiRateLimiter, serviceItemsRoutes);
+  app.use(env.API_PREFIX + '/invoices', appApiRateLimiter, invoicesRoutes);
+  app.use(env.API_PREFIX + '/payments', appApiRateLimiter, paymentsRoutes);
+  app.use(env.API_PREFIX + '/roles', appApiRateLimiter, rolesRoutes);
 
   app.use(notFoundMiddleware);
   app.use(errorMiddleware);
