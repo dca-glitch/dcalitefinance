@@ -12,8 +12,8 @@ export const appNavigation: NavigationItem[] = [
   {
     label: 'Clients',
     path: '/app/clients',
-    status: 'future',
-    description: 'Customer records coming soon',
+    status: 'active',
+    description: 'Manage client records',
     showInSidebar: true,
     showInMobileNav: true,
   },

@@ -1,5 +1,6 @@
 import { API_BASE_URL } from '../config/env';
 import { getAccessToken } from './auth-storage';
+import { getStoredSession } from './session-storage';
 import type { ApiErrorResponse, ApiResponse } from '../types/api';
 
 type JsonRequestBody = unknown;
@@ -62,6 +63,7 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler): void {
 
 async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
   const token = options.token ?? getAccessToken();
+  const activeTenantId = getStoredSession()?.activeTenantId ?? null;
   const headers = new Headers(options.headers);
 
   if (options.body !== undefined) {
@@ -70,6 +72,10 @@ async function request<T>(method: string, path: string, options: RequestOptions 
 
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  if (activeTenantId) {
+    headers.set('x-tenant-id', activeTenantId);
   }
 
   const response = await fetch(buildUrl(path), {

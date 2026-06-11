@@ -3,6 +3,7 @@ import { LoadingState } from '../components/states/LoadingState';
 import { useAuth } from '../hooks/useAuth';
 import { AuthLayout } from '../layouts/AuthLayout';
 import { AppShell } from '../layouts/AppShell';
+import { ClientsPage } from '../pages/ClientsPage';
 import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
@@ -38,6 +39,7 @@ export function AppRoutes() {
         <Route element={<AppShell />}>
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="clients" element={<ClientsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<NotFoundPage />} />
