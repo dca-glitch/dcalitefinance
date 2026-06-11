@@ -65,8 +65,11 @@ async function request<T>(method: string, path: string, options: RequestOptions 
   const token = options.token ?? getAccessToken();
   const activeTenantId = getStoredSession()?.activeTenantId ?? null;
   const headers = new Headers(options.headers);
+  const isFormDataBody = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const requestBody =
+    options.body === undefined ? undefined : isFormDataBody ? (options.body as FormData) : JSON.stringify(options.body);
 
-  if (options.body !== undefined) {
+  if (options.body !== undefined && !isFormDataBody) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -82,7 +85,7 @@ async function request<T>(method: string, path: string, options: RequestOptions 
     ...options,
     method,
     headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body: requestBody as BodyInit | undefined,
   });
 
   const contentType = response.headers.get('content-type');
