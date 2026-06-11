@@ -1,14 +1,14 @@
 {
-  email admin@example.com
+  email admin@digitalcubeagency.net
 }
 
-books.example.com {
+app.digitalcubeagency.net {
   encode zstd gzip
 
   @api path /api/*
-  reverse_proxy @api 127.0.0.1:4000
+  reverse_proxy @api finance-lite-api:4000
 
-  root * /var/www/dca-books-lite/frontend/dist
+  root * /srv/finance-lite/frontend/dist
   try_files {path} /index.html
   file_server
 }

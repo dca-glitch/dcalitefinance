@@ -3,10 +3,18 @@ import { prisma } from '../src/config/prisma';
 import { hashPassword } from '../src/utils/crypto';
 
 async function main() {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const allowProductionBootstrap = process.env.BOOTSTRAP_ALLOW_PRODUCTION === 'true';
   const tenantName = process.env.BOOTSTRAP_TENANT_NAME || 'Digital Cube Agency';
   const tenantSlug = process.env.BOOTSTRAP_TENANT_SLUG || 'digital-cube-agency';
   const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL || 'admin@example.com';
   const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+
+  if (isProduction && !allowProductionBootstrap) {
+    throw new Error(
+      'bootstrap-admin refused: NODE_ENV=production and BOOTSTRAP_ALLOW_PRODUCTION is not "true". Set BOOTSTRAP_ALLOW_PRODUCTION=true only for the intentional initial production bootstrap.',
+    );
+  }
 
   if (!adminPassword || adminPassword.length < 12) {
     throw new Error('Set BOOTSTRAP_ADMIN_PASSWORD with at least 12 characters.');

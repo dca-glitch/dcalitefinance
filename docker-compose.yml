@@ -1,33 +1,45 @@
 services:
   postgres:
     image: postgres:16-bookworm
-    container_name: dca-books-lite-postgres
+    container_name: finance-lite-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: dca_books_lite
-      POSTGRES_USER: dca_lite_user
-      POSTGRES_PASSWORD: dca_lite_password
+      POSTGRES_DB: ${POSTGRES_DB:-dca_books_lite}
+      POSTGRES_USER: ${POSTGRES_USER:-dca_lite_user}
+      POSTGRES_PASSWORD: ${POSTGRES_DB_PASSWORD:?POSTGRES_DB_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dca_lite_user -d dca_books_lite"]
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dca_lite_user} -d ${POSTGRES_DB:-dca_books_lite}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - dca_net
 
   api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: dca-books-lite-api
+    container_name: finance-lite-api
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     env_file:
       - .env
-    ports:
-      - "4000:4000"
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-dca_lite_user}:${POSTGRES_DB_PASSWORD:?POSTGRES_DB_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-dca_books_lite}?schema=public"
+    volumes:
+      - uploads_data:/app/storage/uploads
+    networks:
+      - dca_net
+
+networks:
+  dca_net:
+    external: true
 
 volumes:
   postgres_data:
+  uploads_data:
