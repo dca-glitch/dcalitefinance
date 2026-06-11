@@ -13,6 +13,14 @@ const envSchema = z
     CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
 
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
+    STORAGE_PROVIDER: z.enum(['LOCAL', 'GOOGLE_DRIVE']).default('LOCAL'),
+    LOCAL_UPLOAD_DIR: z.string().min(1).default('storage/uploads'),
+    GOOGLE_DRIVE_ROOT_FOLDER_ID: z.string().min(1).optional(),
+    GOOGLE_DRIVE_ROOT_FOLDER_NAME: z.string().min(1).optional(),
+    GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL: z.string().email().optional(),
+    GOOGLE_DRIVE_PRIVATE_KEY: z.string().min(1).optional(),
+    GOOGLE_DRIVE_CLIENT_EMAIL: z.string().email().optional(),
+    GOOGLE_APPLICATION_CREDENTIALS: z.string().min(1).optional(),
 
     ACCESS_TOKEN_SECRET: z.string().min(32),
     ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(15),
@@ -47,6 +55,31 @@ const envSchema = z
         path: ['COOKIE_SAME_SITE'],
         message: 'COOKIE_SAME_SITE=none requires COOKIE_SECURE=true',
       });
+    }
+
+    if (value.STORAGE_PROVIDER === 'GOOGLE_DRIVE') {
+      const hasRootFolder = Boolean(value.GOOGLE_DRIVE_ROOT_FOLDER_ID || value.GOOGLE_DRIVE_ROOT_FOLDER_NAME);
+      const hasServiceAccountKey = Boolean(
+        value.GOOGLE_APPLICATION_CREDENTIALS ||
+          (value.GOOGLE_DRIVE_CLIENT_EMAIL && value.GOOGLE_DRIVE_PRIVATE_KEY) ||
+          (value.GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL && value.GOOGLE_DRIVE_PRIVATE_KEY),
+      );
+
+      if (!hasRootFolder) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['GOOGLE_DRIVE_ROOT_FOLDER_ID'],
+          message: 'GOOGLE_DRIVE_ROOT_FOLDER_ID or GOOGLE_DRIVE_ROOT_FOLDER_NAME is required when STORAGE_PROVIDER=GOOGLE_DRIVE',
+        });
+      }
+
+      if (!hasServiceAccountKey) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['GOOGLE_DRIVE_PRIVATE_KEY'],
+          message: 'Google Drive service account credentials are required when STORAGE_PROVIDER=GOOGLE_DRIVE',
+        });
+      }
     }
   });
 

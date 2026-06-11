@@ -710,14 +710,14 @@ export async function archiveBill(input: BillStatusInput): Promise<SafeBillRespo
   return mapBill(bill);
 }
 
-async function requireBillAttachmentBill(tenantId: string, billId: string) {
+async function requireBillAttachmentBill(tenantId: string, billId: string): Promise<{ id: string; billDate: Date }> {
   const bill = await prisma.bill.findFirst({
     where: {
       tenantId,
       id: billId,
       deletedAt: null,
     },
-    select: { id: true },
+    select: { id: true, billDate: true },
   });
 
   if (!bill) {
@@ -737,13 +737,14 @@ export async function listBillAttachments(input: { tenantId: string; billId: str
 }
 
 export async function createBillAttachment(input: BillAttachmentInput): Promise<SafeFileAttachmentResponse> {
-  await requireBillAttachmentBill(input.tenantId, input.billId);
+  const bill = await requireBillAttachmentBill(input.tenantId, input.billId);
   return uploadFileAttachment({
     tenantId: input.tenantId,
     actorUserId: input.actorUserId,
     request: input.request,
     entityType: FileAttachmentEntityType.BILL,
     entityId: input.billId,
+    storagePathSegments: ['bills', String(bill.billDate.getUTCFullYear())],
     file: input.file,
   });
 }

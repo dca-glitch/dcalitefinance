@@ -12,6 +12,7 @@ import { expenseCategoriesRoutes } from './routes/expense-categories.routes';
 import { projectsRoutes } from './routes/projects.routes';
 import { serviceItemsRoutes } from './routes/service-items.routes';
 import { invoicesRoutes } from './routes/invoices.routes';
+import { issuerProfileRoutes } from './routes/issuer-profile.routes';
 import { billsRoutes } from './routes/bills.routes';
 import { recurringInvoicesRoutes } from './routes/recurring-invoices.routes';
 import { paymentsRoutes } from './routes/payments.routes';
@@ -67,6 +68,7 @@ export function createApp(): express.Express {
   app.use(env.API_PREFIX + '/invitations', authRateLimiter, invitationsRoutes);
 
   app.use(env.API_PREFIX + '/tenant', appApiRateLimiter, tenantRoutes);
+  app.use(env.API_PREFIX + '/issuer-profile', appApiRateLimiter, issuerProfileRoutes);
   app.use(env.API_PREFIX + '/clients', appApiRateLimiter, clientsRoutes);
   app.use(env.API_PREFIX + '/vendors', appApiRateLimiter, vendorsRoutes);
   app.use(env.API_PREFIX + '/expense-categories', appApiRateLimiter, expenseCategoriesRoutes);

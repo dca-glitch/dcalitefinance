@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { env } from './env';
 
-export const FILE_STORAGE_ROOT = path.resolve(process.cwd(), 'storage', 'uploads');
+export const FILE_STORAGE_ROOT = path.resolve(process.cwd(), env.LOCAL_UPLOAD_DIR);
 
 export function ensureFileStorageRoot(): void {
   fs.mkdirSync(FILE_STORAGE_ROOT, { recursive: true });

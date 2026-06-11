@@ -45,6 +45,8 @@ async function main() {
       'auth:read:self',
       'auth:update:self',
       'tenant:read:self',
+      'issuerProfile:read',
+      'issuerProfile:manage',
       'tenant:read:members',
       'tenant:manage:members',
       'client:read',
@@ -105,6 +107,26 @@ async function main() {
       update: { deletedAt: null },
       create: { tenantId: tenant.id, userId: user.id, roleId: ownerRole.id },
     });
+
+    const issuerDisplayName = process.env.BOOTSTRAP_ISSUER_DISPLAY_NAME?.trim();
+    const issuerCurrencyCode = process.env.BOOTSTRAP_ISSUER_CURRENCY_CODE?.trim().toUpperCase();
+
+    if (issuerDisplayName && issuerCurrencyCode) {
+      await tx.tenantIssuerProfile.upsert({
+        where: { tenantId: tenant.id },
+        update: {
+          issuerDisplayName,
+          issuerLegalName: process.env.BOOTSTRAP_ISSUER_LEGAL_NAME?.trim() || null,
+          currencyCode: issuerCurrencyCode,
+        },
+        create: {
+          tenantId: tenant.id,
+          issuerDisplayName,
+          issuerLegalName: process.env.BOOTSTRAP_ISSUER_LEGAL_NAME?.trim() || null,
+          currencyCode: issuerCurrencyCode,
+        },
+      });
+    }
 
     await tx.auditLog.create({
       data: {

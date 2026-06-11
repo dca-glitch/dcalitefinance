@@ -268,7 +268,7 @@ async function currentPaidAmountMinor(tx: Prisma.TransactionClient, tenantId: st
   return aggregate._sum.amountMinor ?? 0;
 }
 
-async function requirePayment(input: { tenantId: string; paymentId: string }): Promise<{ id: string }> {
+async function requirePayment(input: { tenantId: string; paymentId: string }): Promise<{ id: string; paymentDate: Date }> {
   const payment = await prisma.payment.findFirst({
     where: {
       tenantId: input.tenantId,
@@ -276,6 +276,7 @@ async function requirePayment(input: { tenantId: string; paymentId: string }): P
     },
     select: {
       id: true,
+      paymentDate: true,
     },
   });
 
@@ -544,13 +545,14 @@ export async function listPaymentAttachments(input: { tenantId: string; paymentI
 }
 
 export async function createPaymentAttachment(input: PaymentAttachmentInput): Promise<SafeFileAttachmentResponse> {
-  await requirePayment(input);
+  const payment = await requirePayment(input);
   return uploadFileAttachment({
     tenantId: input.tenantId,
     actorUserId: input.actorUserId,
     request: input.request,
     entityType: FileAttachmentEntityType.PAYMENT,
     entityId: input.paymentId,
+    storagePathSegments: ['payments', String(payment.paymentDate.getUTCFullYear())],
     file: input.file,
   });
 }

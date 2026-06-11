@@ -50,6 +50,7 @@ enum PaymentStatus {
 enum FileAttachmentEntityType {
   PAYMENT
   BILL
+  INVOICE
 }
 
 enum StorageProvider {
@@ -143,6 +144,7 @@ model Tenant {
   recurringInvoices RecurringInvoice[]
   recurringInvoiceLines RecurringInvoiceLine[]
   recurringInvoiceRuns RecurringInvoiceRun[]
+  issuerProfile TenantIssuerProfile?
   fileAttachments FileAttachment[]
   auditLogs AuditLog[]
   authTokens AuthToken[]
@@ -516,6 +518,9 @@ model FileAttachment {
   sizeBytes        Int                     @map("size_bytes")
   storageProvider  StorageProvider         @map("storage_provider")
   storageKey       String                  @map("storage_key") @db.VarChar(500)
+  googleDriveFileId String?                @map("google_drive_file_id") @db.VarChar(120)
+  googleDriveWebViewLink String?           @map("google_drive_web_view_link") @db.VarChar(1000)
+  googleDriveWebContentLink String?        @map("google_drive_web_content_link") @db.VarChar(1000)
   checksumSha256   String?                 @map("checksum_sha256") @db.VarChar(64)
   uploadedByUserId String                  @map("uploaded_by_user_id") @db.Uuid
 
@@ -529,6 +534,40 @@ model FileAttachment {
   @@index([tenantId, storageProvider, deletedAt])
   @@index([tenantId, uploadedByUserId, deletedAt])
   @@map("file_attachments")
+}
+
+model TenantIssuerProfile {
+  id                         String   @id @default(uuid()) @db.Uuid
+  tenantId                   String   @unique @map("tenant_id") @db.Uuid
+  issuerDisplayName          String   @map("issuer_display_name") @db.VarChar(160)
+  issuerLegalName            String?  @map("issuer_legal_name") @db.VarChar(200)
+  addressLine1               String?  @map("address_line1") @db.VarChar(160)
+  addressLine2               String?  @map("address_line2") @db.VarChar(160)
+  city                       String?  @db.VarChar(120)
+  state                      String?  @db.VarChar(120)
+  postalCode                 String?  @map("postal_code") @db.VarChar(40)
+  country                    String?  @db.VarChar(120)
+  email                      String?  @db.Citext
+  phone                      String?  @db.VarChar(40)
+  website                    String?  @db.VarChar(200)
+  taxId                      String?  @map("tax_id") @db.VarChar(80)
+  companyRegistrationNumber   String?  @map("company_registration_number") @db.VarChar(80)
+  currencyCode               String   @map("currency_code") @db.Char(3)
+  defaultInvoiceTerms        String?  @map("default_invoice_terms") @db.Text
+  defaultPaymentInstructions  String?  @map("default_payment_instructions") @db.Text
+  bankAccountName            String?  @map("bank_account_name") @db.VarChar(160)
+  bankName                   String?  @map("bank_name") @db.VarChar(160)
+  bankAccountNumber          String?  @map("bank_account_number") @db.VarChar(120)
+  bankSwift                  String?  @map("bank_swift") @db.VarChar(40)
+  invoiceFooter              String?  @map("invoice_footer") @db.Text
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@map("tenant_issuer_profiles")
 }
 
 model RecurringInvoice {

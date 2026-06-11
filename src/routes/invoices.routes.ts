@@ -3,8 +3,10 @@ import {
   archiveInvoiceHandler,
   createInvoiceHandler,
   cancelInvoiceHandler,
+  generateInvoicePdfHandler,
   getInvoiceHandler,
   issueInvoiceHandler,
+  listInvoiceDocumentsHandler,
   listInvoicesHandler,
   updateInvoiceHandler,
 } from '../controllers/invoices.controller';
@@ -63,4 +65,18 @@ invoicesRoutes.delete(
   asyncHandler(requireTenant),
   asyncHandler(requirePermission('invoice:manage')),
   asyncHandler(archiveInvoiceHandler),
+);
+invoicesRoutes.get(
+  '/:invoiceId/documents',
+  asyncHandler(requireAuth),
+  asyncHandler(requireTenant),
+  asyncHandler(requireAnyPermission(['invoice:read', 'invoice:manage'])),
+  asyncHandler(listInvoiceDocumentsHandler),
+);
+invoicesRoutes.post(
+  '/:invoiceId/generate-pdf',
+  asyncHandler(requireAuth),
+  asyncHandler(requireTenant),
+  asyncHandler(requirePermission('invoice:manage')),
+  asyncHandler(generateInvoicePdfHandler),
 );

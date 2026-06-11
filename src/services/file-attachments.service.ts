@@ -1,13 +1,11 @@
-import { createHash, randomUUID } from 'node:crypto';
-import fs from 'node:fs/promises';
-import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { Request } from 'express';
 import type { Prisma } from '@prisma/client';
 import { AuditAction, AuditActorType, FileAttachmentEntityType, StorageProvider } from '@prisma/client';
 import { prisma } from '../config/prisma';
-import { FILE_STORAGE_ROOT, buildAttachmentStorageDirectory, buildAttachmentStorageKey, ensureFileStorageRoot } from '../config/storage';
 import { AppError } from '../errors/AppError';
 import { writeAuditLog } from './audit.service';
+import { buildManagedStorageChecksum, deleteManagedFile, storeManagedFile } from './managed-file-storage.service';
 
 const mimeTypeExtensionMap: Record<string, string> = {
   'application/pdf': '.pdf',
@@ -24,6 +22,9 @@ export interface SafeFileAttachmentResponse {
   mimeType: string;
   sizeBytes: number;
   storageProvider: StorageProvider;
+  documentLink: string | null;
+  webViewLink: string | null;
+  webContentLink: string | null;
   uploadedByUserId: string;
   createdAt: Date;
 }
@@ -34,6 +35,7 @@ export interface FileAttachmentUploadInput {
   request: Request;
   entityType: FileAttachmentEntityType;
   entityId: string;
+  storagePathSegments?: string[];
   file: Express.Multer.File;
 }
 
@@ -60,6 +62,8 @@ const fileAttachmentSelect = {
   mimeType: true,
   sizeBytes: true,
   storageProvider: true,
+  googleDriveWebViewLink: true,
+  googleDriveWebContentLink: true,
   uploadedByUserId: true,
   createdAt: true,
 } satisfies Prisma.FileAttachmentSelect;
@@ -102,6 +106,8 @@ function mapAttachment(attachment: {
   mimeType: string;
   sizeBytes: number;
   storageProvider: StorageProvider;
+  googleDriveWebViewLink: string | null;
+  googleDriveWebContentLink: string | null;
   uploadedByUserId: string;
   createdAt: Date;
 }): SafeFileAttachmentResponse {
@@ -113,21 +119,12 @@ function mapAttachment(attachment: {
     mimeType: attachment.mimeType,
     sizeBytes: attachment.sizeBytes,
     storageProvider: attachment.storageProvider,
+    documentLink: attachment.googleDriveWebViewLink ?? attachment.googleDriveWebContentLink ?? null,
+    webViewLink: attachment.googleDriveWebViewLink,
+    webContentLink: attachment.googleDriveWebContentLink,
     uploadedByUserId: attachment.uploadedByUserId,
     createdAt: attachment.createdAt,
   };
-}
-
-async function removeStoredFile(storageKey: string): Promise<void> {
-  const absolutePath = path.join(FILE_STORAGE_ROOT, storageKey);
-
-  try {
-    await fs.unlink(absolutePath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
-    }
-  }
 }
 
 export async function listFileAttachments(input: FileAttachmentListInput): Promise<SafeFileAttachmentResponse[]> {
@@ -148,17 +145,19 @@ export async function listFileAttachments(input: FileAttachmentListInput): Promi
 }
 
 export async function uploadFileAttachment(input: FileAttachmentUploadInput): Promise<SafeFileAttachmentResponse> {
-  ensureFileStorageRoot();
-
   const extension = validateUploadFile(input.file);
   const attachmentId = randomUUID();
   const storedFilename = `${attachmentId}${extension}`;
-  const storageDirectory = buildAttachmentStorageDirectory(input.tenantId, input.entityType);
-  const storageKey = buildAttachmentStorageKey(input.tenantId, input.entityType, storedFilename);
-  const checksumSha256 = createHash('sha256').update(input.file.buffer).digest('hex');
-
-  await fs.mkdir(storageDirectory, { recursive: true });
-  await fs.writeFile(path.join(storageDirectory, storedFilename), input.file.buffer);
+  const checksumSha256 = buildManagedStorageChecksum(input.file.buffer);
+  const storage = await storeManagedFile({
+    tenantId: input.tenantId,
+    entityType: input.entityType,
+    folderSegments: input.storagePathSegments ?? [input.entityType.toLowerCase()],
+    originalFilename: input.file.originalname,
+    storedFilename,
+    mimeType: input.file.mimetype,
+    buffer: input.file.buffer,
+  });
 
   const attachment = await prisma.fileAttachment.create({
     data: {
@@ -167,11 +166,14 @@ export async function uploadFileAttachment(input: FileAttachmentUploadInput): Pr
       entityType: input.entityType,
       entityId: input.entityId,
       originalFilename: input.file.originalname,
-      storedFilename,
+      storedFilename: storage.storedFilename,
       mimeType: input.file.mimetype,
       sizeBytes: input.file.size,
-      storageProvider: StorageProvider.LOCAL,
-      storageKey,
+      storageProvider: storage.storageProvider,
+      storageKey: storage.storageKey,
+      googleDriveFileId: storage.googleDriveFileId,
+      googleDriveWebViewLink: storage.googleDriveWebViewLink,
+      googleDriveWebContentLink: storage.googleDriveWebContentLink,
       checksumSha256,
       uploadedByUserId: input.actorUserId,
     },
@@ -217,6 +219,9 @@ export async function deleteFileAttachment(input: FileAttachmentDeleteInput): Pr
         mimeType: true,
         sizeBytes: true,
         storageProvider: true,
+        googleDriveFileId: true,
+        googleDriveWebViewLink: true,
+        googleDriveWebContentLink: true,
         uploadedByUserId: true,
         createdAt: true,
         storageKey: true,
@@ -238,10 +243,16 @@ export async function deleteFileAttachment(input: FileAttachmentDeleteInput): Pr
     return {
       attachment,
       storageKey: existing.storageKey,
+      storageProvider: existing.storageProvider,
+      googleDriveFileId: existing.googleDriveFileId,
     };
   });
 
-  await removeStoredFile(result.storageKey);
+  await deleteManagedFile({
+    storageProvider: result.storageProvider,
+    storageKey: result.storageKey,
+    googleDriveFileId: result.googleDriveFileId,
+  });
 
   await writeAuditLog({
     actorType: AuditActorType.USER,

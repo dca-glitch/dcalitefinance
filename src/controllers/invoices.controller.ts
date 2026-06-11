@@ -11,6 +11,10 @@ import {
   listInvoices as listInvoicesService,
   updateInvoice as updateInvoiceService,
 } from '../services/invoices.service';
+import {
+  generateInvoicePdf as generateInvoicePdfService,
+  listInvoiceDocuments as listInvoiceDocumentsService,
+} from '../services/invoice-documents.service';
 
 const invoiceIdSchema = z.string().uuid();
 
@@ -248,6 +252,44 @@ export async function archiveInvoiceHandler(req: Request, res: Response): Promis
       success: true,
       data: {
         invoice,
+      },
+    }),
+  );
+}
+
+export async function listInvoiceDocumentsHandler(req: Request, res: Response): Promise<void> {
+  const context = requireAuthAndTenant(req);
+  const invoiceId = invoiceIdSchema.parse(req.params.invoiceId);
+  const documents = await listInvoiceDocumentsService({
+    tenantId: context.tenantId,
+    invoiceId,
+  });
+
+  res.status(200).json(
+    toJsonSafe({
+      success: true,
+      data: {
+        documents,
+      },
+    }),
+  );
+}
+
+export async function generateInvoicePdfHandler(req: Request, res: Response): Promise<void> {
+  const context = requireAuthAndTenant(req);
+  const invoiceId = invoiceIdSchema.parse(req.params.invoiceId);
+  const attachment = await generateInvoicePdfService({
+    tenantId: context.tenantId,
+    actorUserId: context.userId,
+    request: req,
+    invoiceId,
+  });
+
+  res.status(201).json(
+    toJsonSafe({
+      success: true,
+      data: {
+        attachment,
       },
     }),
   );
