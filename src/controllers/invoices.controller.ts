@@ -3,9 +3,11 @@ import { z } from 'zod';
 import { AppError } from '../errors/AppError';
 import { toJsonSafe } from '../utils/json';
 import {
+  cancelInvoice as cancelInvoiceService,
   archiveInvoice as archiveInvoiceService,
   createInvoice as createInvoiceService,
   getInvoice as getInvoiceService,
+  issueInvoice as issueInvoiceService,
   listInvoices as listInvoicesService,
   updateInvoice as updateInvoiceService,
 } from '../services/invoices.service';
@@ -42,6 +44,10 @@ const invoiceUpdateBodySchema = z.object({
   notes: z.string().trim().min(1).max(5000).nullable().optional(),
   terms: z.string().trim().min(1).max(5000).nullable().optional(),
   lines: z.array(invoiceLineSchema).min(1),
+});
+
+const invoiceCancelBodySchema = z.object({
+  reason: z.string().trim().min(1).max(5000).nullable().optional(),
 });
 
 const listInvoicesQuerySchema = z.object({
@@ -133,6 +139,53 @@ export async function createInvoiceHandler(req: Request, res: Response): Promise
   });
 
   res.status(201).json(
+    toJsonSafe({
+      success: true,
+      data: {
+        invoice,
+      },
+    }),
+  );
+}
+
+export async function issueInvoiceHandler(req: Request, res: Response): Promise<void> {
+  const context = requireAuthAndTenant(req);
+  const invoiceId = invoiceIdSchema.parse(req.params.invoiceId);
+  const invoice = await issueInvoiceService({
+    tenantId: context.tenantId,
+    actorUserId: context.userId,
+    request: req,
+    invoiceId,
+  });
+
+  res.status(200).json(
+    toJsonSafe({
+      success: true,
+      data: {
+        invoice,
+      },
+    }),
+  );
+}
+
+export async function cancelInvoiceHandler(req: Request, res: Response): Promise<void> {
+  const context = requireAuthAndTenant(req);
+  const invoiceId = invoiceIdSchema.parse(req.params.invoiceId);
+  const parsed = invoiceCancelBodySchema.safeParse(req.body ?? {});
+
+  if (!parsed.success) {
+    throw new AppError('Invalid invoice cancel payload', 400, 'INVALID_INVOICE_CANCEL_PAYLOAD');
+  }
+
+  const invoice = await cancelInvoiceService({
+    tenantId: context.tenantId,
+    actorUserId: context.userId,
+    request: req,
+    invoiceId,
+    reason: parsed.data.reason,
+  });
+
+  res.status(200).json(
     toJsonSafe({
       success: true,
       data: {

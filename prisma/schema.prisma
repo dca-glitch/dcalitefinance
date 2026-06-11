@@ -35,6 +35,8 @@ enum ClientStatus {
 
 enum InvoiceStatus {
   DRAFT
+  ISSUED
+  CANCELLED
   ARCHIVED
 }
 

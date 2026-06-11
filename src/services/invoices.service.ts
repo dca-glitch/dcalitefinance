@@ -105,6 +105,21 @@ export interface UpdateInvoiceInput {
   lines: InvoiceLineInput[];
 }
 
+export interface IssueInvoiceInput {
+  invoiceId: string;
+  tenantId: string;
+  actorUserId: string;
+  request: Request;
+}
+
+export interface CancelInvoiceInput {
+  invoiceId: string;
+  tenantId: string;
+  actorUserId: string;
+  request: Request;
+  reason?: string | null;
+}
+
 export interface InvoiceListResult {
   invoices: SafeInvoiceListItemResponse[];
   page: number;
@@ -220,6 +235,18 @@ function serviceItemNotFoundError(): AppError {
 
 function invoiceLockedError(): AppError {
   return new AppError('Invoice can only be modified while draft', 400, 'INVOICE_NOT_DRAFT');
+}
+
+function invoiceIssueError(): AppError {
+  return new AppError('Invoice can only be issued while draft', 400, 'INVOICE_NOT_DRAFT');
+}
+
+function invoiceCancellationError(): AppError {
+  return new AppError('Invoice can only be cancelled after issue', 400, 'INVOICE_NOT_ISSUED');
+}
+
+function invoiceRequiresActiveLinesError(): AppError {
+  return new AppError('Invoice requires at least one active line before issue', 400, 'INVOICE_REQUIRES_ACTIVE_LINES');
 }
 
 function invalidDueDateError(): AppError {
@@ -631,6 +658,112 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<SafeInvo
       lineCount: invoice.lines.length,
       subtotalMinor: invoice.subtotalMinor,
       totalMinor: invoice.totalMinor,
+    } satisfies Prisma.InputJsonValue,
+  });
+
+  return mapInvoice(invoice);
+}
+
+export async function issueInvoice(input: IssueInvoiceInput): Promise<SafeInvoiceResponse> {
+  const invoice = await prisma.$transaction(async (tx) => {
+    const existing = await tx.invoice.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        id: input.invoiceId,
+        deletedAt: null,
+      },
+      select: invoiceSelect,
+    });
+
+    if (!existing) {
+      throw invoiceNotFoundError();
+    }
+
+    if (existing.status !== InvoiceStatus.DRAFT) {
+      throw invoiceIssueError();
+    }
+
+    if ((existing.lines ?? []).length === 0) {
+      throw invoiceRequiresActiveLinesError();
+    }
+
+    return tx.invoice.update({
+      where: { id: existing.id },
+      data: {
+        status: InvoiceStatus.ISSUED,
+      },
+      select: invoiceSelect,
+    });
+  });
+
+  await writeAuditLog({
+    actorType: AuditActorType.USER,
+    action: AuditAction.UPDATE,
+    actorUserId: input.actorUserId,
+    tenantId: input.tenantId,
+    request: input.request,
+    entityType: 'Invoice',
+    entityId: invoice.id,
+    metadata: {
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      fromStatus: 'DRAFT',
+      toStatus: 'ISSUED',
+      lineCount: invoice.lines.length,
+    } satisfies Prisma.InputJsonValue,
+  });
+
+  return mapInvoice(invoice);
+}
+
+export async function cancelInvoice(input: CancelInvoiceInput): Promise<SafeInvoiceResponse> {
+  const reason = normalizeOptionalText(input.reason);
+
+  const invoice = await prisma.$transaction(async (tx) => {
+    const existing = await tx.invoice.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        id: input.invoiceId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        status: true,
+        invoiceNumber: true,
+      },
+    });
+
+    if (!existing) {
+      throw invoiceNotFoundError();
+    }
+
+    if (existing.status !== InvoiceStatus.ISSUED) {
+      throw invoiceCancellationError();
+    }
+
+    return tx.invoice.update({
+      where: { id: existing.id },
+      data: {
+        status: InvoiceStatus.CANCELLED,
+      },
+      select: invoiceSelect,
+    });
+  });
+
+  await writeAuditLog({
+    actorType: AuditActorType.USER,
+    action: AuditAction.UPDATE,
+    actorUserId: input.actorUserId,
+    tenantId: input.tenantId,
+    request: input.request,
+    entityType: 'Invoice',
+    entityId: invoice.id,
+    metadata: {
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      fromStatus: 'ISSUED',
+      toStatus: 'CANCELLED',
+      reason,
     } satisfies Prisma.InputJsonValue,
   });
 

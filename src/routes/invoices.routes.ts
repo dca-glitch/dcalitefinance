@@ -2,7 +2,9 @@ import { Router } from 'express';
 import {
   archiveInvoiceHandler,
   createInvoiceHandler,
+  cancelInvoiceHandler,
   getInvoiceHandler,
+  issueInvoiceHandler,
   listInvoicesHandler,
   updateInvoiceHandler,
 } from '../controllers/invoices.controller';
@@ -33,6 +35,20 @@ invoicesRoutes.post(
   asyncHandler(requireTenant),
   asyncHandler(requirePermission('invoice:manage')),
   asyncHandler(createInvoiceHandler),
+);
+invoicesRoutes.post(
+  '/:invoiceId/issue',
+  asyncHandler(requireAuth),
+  asyncHandler(requireTenant),
+  asyncHandler(requirePermission('invoice:manage')),
+  asyncHandler(issueInvoiceHandler),
+);
+invoicesRoutes.post(
+  '/:invoiceId/cancel',
+  asyncHandler(requireAuth),
+  asyncHandler(requireTenant),
+  asyncHandler(requirePermission('invoice:manage')),
+  asyncHandler(cancelInvoiceHandler),
 );
 invoicesRoutes.patch(
   '/:invoiceId',
