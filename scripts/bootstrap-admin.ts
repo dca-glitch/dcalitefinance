@@ -55,6 +55,8 @@ async function main() {
       'serviceItem:manage',
       'invoice:read',
       'invoice:manage',
+      'payment:read',
+      'payment:manage',
       'role:read',
       'role:manage',
     ];

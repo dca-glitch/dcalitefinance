@@ -44,6 +44,8 @@ export interface SafeInvoiceResponse {
   terms: string | null;
   subtotalMinor: number;
   totalMinor: number;
+  paidAmountMinor: number;
+  balanceDueMinor: number;
   lines: SafeInvoiceLineResponse[];
   createdAt: Date;
   updatedAt: Date;
@@ -66,6 +68,8 @@ export interface SafeInvoiceListItemResponse {
   terms: string | null;
   subtotalMinor: number;
   totalMinor: number;
+  paidAmountMinor: number;
+  balanceDueMinor: number;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -163,6 +167,8 @@ const invoiceSelect = {
   terms: true,
   subtotalMinor: true,
   totalMinor: true,
+  paidAmountMinor: true,
+  balanceDueMinor: true,
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
@@ -197,6 +203,8 @@ const invoiceListSelect = {
   terms: true,
   subtotalMinor: true,
   totalMinor: true,
+  paidAmountMinor: true,
+  balanceDueMinor: true,
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
@@ -332,6 +340,8 @@ function mapInvoice(invoice: {
   terms: string | null;
   subtotalMinor: number;
   totalMinor: number;
+  paidAmountMinor: number;
+  balanceDueMinor: number;
   lines?: Array<{
     id: string;
     lineNumber: number;
@@ -363,6 +373,8 @@ function mapInvoice(invoice: {
     terms: invoice.terms,
     subtotalMinor: invoice.subtotalMinor,
     totalMinor: invoice.totalMinor,
+    paidAmountMinor: invoice.paidAmountMinor,
+    balanceDueMinor: invoice.balanceDueMinor,
     lines: (invoice.lines ?? []).map(mapInvoiceLine),
     createdAt: invoice.createdAt,
     updatedAt: invoice.updatedAt,
@@ -386,6 +398,8 @@ function mapInvoiceListItem(invoice: {
   terms: string | null;
   subtotalMinor: number;
   totalMinor: number;
+  paidAmountMinor: number;
+  balanceDueMinor: number;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
@@ -406,6 +420,8 @@ function mapInvoiceListItem(invoice: {
     terms: invoice.terms,
     subtotalMinor: invoice.subtotalMinor,
     totalMinor: invoice.totalMinor,
+    paidAmountMinor: invoice.paidAmountMinor,
+    balanceDueMinor: invoice.balanceDueMinor,
     createdAt: invoice.createdAt,
     updatedAt: invoice.updatedAt,
     deletedAt: invoice.deletedAt,
@@ -566,6 +582,8 @@ async function createInvoiceRecord(
       terms: normalizeOptionalText(input.terms),
       subtotalMinor,
       totalMinor,
+      paidAmountMinor: 0,
+      balanceDueMinor: subtotalMinor,
     },
   });
 
@@ -691,6 +709,8 @@ export async function issueInvoice(input: IssueInvoiceInput): Promise<SafeInvoic
       where: { id: existing.id },
       data: {
         status: InvoiceStatus.ISSUED,
+        paidAmountMinor: 0,
+        balanceDueMinor: existing.totalMinor,
       },
       select: invoiceSelect,
     });
@@ -837,6 +857,8 @@ export async function updateInvoice(input: UpdateInvoiceInput): Promise<SafeInvo
         terms: input.terms === undefined ? existing.terms : normalizeOptionalText(input.terms),
         subtotalMinor,
         totalMinor,
+        paidAmountMinor: 0,
+        balanceDueMinor: subtotalMinor,
       },
       select: invoiceSelect,
     });

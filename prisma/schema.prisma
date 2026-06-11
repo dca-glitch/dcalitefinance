@@ -36,8 +36,15 @@ enum ClientStatus {
 enum InvoiceStatus {
   DRAFT
   ISSUED
+  PARTIALLY_PAID
+  PAID
   CANCELLED
   ARCHIVED
+}
+
+enum PaymentStatus {
+  POSTED
+  REVERSED
 }
 
 enum AuditActorType {
@@ -93,6 +100,7 @@ model Tenant {
   invoices     Invoice[]
   invoiceSequences InvoiceSequence[]
   invoiceLines InvoiceLine[]
+  payments     Payment[]
   auditLogs    AuditLog[]
   authTokens   AuthToken[]
 
@@ -297,6 +305,8 @@ model Invoice {
   terms          String?      @db.Text
   subtotalMinor  Int          @map("subtotal_minor")
   totalMinor     Int          @map("total_minor")
+  paidAmountMinor Int          @default(0) @map("paid_amount_minor")
+  balanceDueMinor Int          @default(0) @map("balance_due_minor")
 
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -306,6 +316,7 @@ model Invoice {
   client  Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
   project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   lines   InvoiceLine[]
+  payments Payment[]
 
   @@unique([tenantId, invoiceNumber])
   @@unique([tenantId, invoiceYear, invoiceSequence])
@@ -339,6 +350,32 @@ model InvoiceLine {
   @@index([tenantId, serviceItemId])
   @@index([tenantId, invoiceId, lineNumber])
   @@map("invoice_lines")
+}
+
+model Payment {
+  id            String        @id @default(uuid()) @db.Uuid
+  tenantId      String        @map("tenant_id") @db.Uuid
+  invoiceId     String        @map("invoice_id") @db.Uuid
+  amountMinor   Int           @map("amount_minor")
+  paymentDate   DateTime      @map("payment_date") @db.Date
+  method        String        @db.VarChar(80)
+  reference     String?       @db.VarChar(120)
+  notes         String?       @db.Text
+  status        PaymentStatus @default(POSTED)
+  reversedAt    DateTime?     @map("reversed_at") @db.Timestamptz(6)
+  reversalReason String?      @map("reversal_reason") @db.VarChar(500)
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, invoiceId])
+  @@index([tenantId, invoiceId, status])
+  @@index([tenantId, paymentDate])
+  @@index([tenantId, status, reversedAt])
+  @@map("payments")
 }
 
 model Permission {
