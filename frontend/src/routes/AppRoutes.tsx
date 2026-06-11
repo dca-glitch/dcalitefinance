@@ -5,6 +5,7 @@ import { AuthLayout } from '../layouts/AuthLayout';
 import { AppShell } from '../layouts/AppShell';
 import { ClientsPage } from '../pages/ClientsPage';
 import { LoginPage } from '../pages/LoginPage';
+import { ProjectsPage } from '../pages/ProjectsPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { ProtectedRoute } from './ProtectedRoute';
@@ -40,6 +41,7 @@ export function AppRoutes() {
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="clients" element={<ClientsPage />} />
+          <Route path="projects" element={<ProjectsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<NotFoundPage />} />

@@ -20,8 +20,8 @@ export const appNavigation: NavigationItem[] = [
   {
     label: 'Projects',
     path: '/app/projects',
-    status: 'future',
-    description: 'Project tracking coming soon',
+    status: 'active',
+    description: 'Manage project records',
     showInSidebar: true,
     showInMobileNav: true,
   },
