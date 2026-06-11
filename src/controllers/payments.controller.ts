@@ -3,13 +3,17 @@ import { z } from 'zod';
 import { AppError } from '../errors/AppError';
 import { toJsonSafe } from '../utils/json';
 import {
+  createPaymentAttachment as createPaymentAttachmentService,
   createPayment as createPaymentService,
+  deletePaymentAttachment as deletePaymentAttachmentService,
   getPayment as getPaymentService,
+  listPaymentAttachments as listPaymentAttachmentsService,
   listPayments as listPaymentsService,
   reversePayment as reversePaymentService,
 } from '../services/payments.service';
 
 const paymentIdSchema = z.string().uuid();
+const attachmentIdSchema = z.string().uuid();
 
 const listPaymentsQuerySchema = z.object({
   invoiceId: z.string().uuid().optional(),
@@ -138,6 +142,72 @@ export async function reversePaymentHandler(req: Request, res: Response): Promis
       success: true,
       data: {
         payment,
+      },
+    }),
+  );
+}
+
+export async function listPaymentAttachmentsHandler(req: Request, res: Response): Promise<void> {
+  const context = requireAuthAndTenant(req);
+  const paymentId = paymentIdSchema.parse(req.params.paymentId);
+  const attachments = await listPaymentAttachmentsService({
+    tenantId: context.tenantId,
+    paymentId,
+  });
+
+  res.status(200).json(
+    toJsonSafe({
+      success: true,
+      data: {
+        attachments,
+      },
+    }),
+  );
+}
+
+export async function createPaymentAttachmentHandler(req: Request, res: Response): Promise<void> {
+  const context = requireAuthAndTenant(req);
+  const paymentId = paymentIdSchema.parse(req.params.paymentId);
+
+  if (!req.file) {
+    throw new AppError('File is required', 400, 'FILE_REQUIRED');
+  }
+
+  const attachment = await createPaymentAttachmentService({
+    tenantId: context.tenantId,
+    actorUserId: context.userId,
+    request: req,
+    paymentId,
+    file: req.file,
+  });
+
+  res.status(201).json(
+    toJsonSafe({
+      success: true,
+      data: {
+        attachment,
+      },
+    }),
+  );
+}
+
+export async function deletePaymentAttachmentHandler(req: Request, res: Response): Promise<void> {
+  const context = requireAuthAndTenant(req);
+  const paymentId = paymentIdSchema.parse(req.params.paymentId);
+  const attachmentId = attachmentIdSchema.parse(req.params.attachmentId);
+  const attachment = await deletePaymentAttachmentService({
+    tenantId: context.tenantId,
+    actorUserId: context.userId,
+    request: req,
+    paymentId,
+    attachmentId,
+  });
+
+  res.status(200).json(
+    toJsonSafe({
+      success: true,
+      data: {
+        attachment,
       },
     }),
   );

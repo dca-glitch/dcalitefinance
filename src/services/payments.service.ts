@@ -1,9 +1,15 @@
 import type { Request } from 'express';
 import type { Prisma } from '@prisma/client';
-import { AuditAction, AuditActorType, InvoiceStatus, PaymentStatus } from '@prisma/client';
+import { AuditAction, AuditActorType, FileAttachmentEntityType, InvoiceStatus, PaymentStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { AppError } from '../errors/AppError';
 import { writeAuditLog } from './audit.service';
+import {
+  deleteFileAttachment,
+  listFileAttachments,
+  uploadFileAttachment,
+  type SafeFileAttachmentResponse,
+} from './file-attachments.service';
 
 export interface SafePaymentInvoiceResponse {
   id: string;
@@ -61,6 +67,22 @@ export interface PaymentListResult {
   page: number;
   limit: number;
   total: number;
+}
+
+export interface PaymentAttachmentInput {
+  tenantId: string;
+  actorUserId: string;
+  request: Request;
+  paymentId: string;
+  file: Express.Multer.File;
+}
+
+export interface PaymentAttachmentDeleteInput {
+  tenantId: string;
+  actorUserId: string;
+  request: Request;
+  paymentId: string;
+  attachmentId: string;
 }
 
 const paymentInvoiceSelect = {
@@ -244,6 +266,24 @@ async function currentPaidAmountMinor(tx: Prisma.TransactionClient, tenantId: st
   });
 
   return aggregate._sum.amountMinor ?? 0;
+}
+
+async function requirePayment(input: { tenantId: string; paymentId: string }): Promise<{ id: string }> {
+  const payment = await prisma.payment.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      id: input.paymentId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!payment) {
+    throw paymentNotFoundError();
+  }
+
+  return payment;
 }
 
 async function recalculateInvoicePaymentState(tx: Prisma.TransactionClient, tenantId: string, invoiceId: string): Promise<{
@@ -492,4 +532,37 @@ export async function reversePayment(input: ReversePaymentInput): Promise<SafePa
   });
 
   return mapPayment(payment);
+}
+
+export async function listPaymentAttachments(input: { tenantId: string; paymentId: string }): Promise<SafeFileAttachmentResponse[]> {
+  await requirePayment(input);
+  return listFileAttachments({
+    tenantId: input.tenantId,
+    entityType: FileAttachmentEntityType.PAYMENT,
+    entityId: input.paymentId,
+  });
+}
+
+export async function createPaymentAttachment(input: PaymentAttachmentInput): Promise<SafeFileAttachmentResponse> {
+  await requirePayment(input);
+  return uploadFileAttachment({
+    tenantId: input.tenantId,
+    actorUserId: input.actorUserId,
+    request: input.request,
+    entityType: FileAttachmentEntityType.PAYMENT,
+    entityId: input.paymentId,
+    file: input.file,
+  });
+}
+
+export async function deletePaymentAttachment(input: PaymentAttachmentDeleteInput): Promise<SafeFileAttachmentResponse> {
+  await requirePayment(input);
+  return deleteFileAttachment({
+    tenantId: input.tenantId,
+    actorUserId: input.actorUserId,
+    request: input.request,
+    entityType: FileAttachmentEntityType.PAYMENT,
+    entityId: input.paymentId,
+    attachmentId: input.attachmentId,
+  });
 }
