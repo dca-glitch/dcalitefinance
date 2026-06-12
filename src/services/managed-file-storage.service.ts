@@ -1,6 +1,8 @@
-import { createHash, createSign, randomUUID } from 'node:crypto';
-import fs from 'node:fs/promises';
+import { createHash, createHmac, createSign, randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { StorageProvider, type FileAttachmentEntityType } from '@prisma/client';
 import { env } from '../config/env';
 import { FILE_STORAGE_ROOT } from '../config/storage';
@@ -31,6 +33,18 @@ export interface ManagedFileDeleteInput {
   googleDriveFileId?: string | null;
 }
 
+export interface ManagedFileReadInput {
+  storageProvider: StorageProvider;
+  storageKey: string;
+  googleDriveFileId?: string | null;
+}
+
+export interface ManagedFileReadResult {
+  stream: Readable;
+  contentType: string | null;
+  contentLength: number | null;
+}
+
 interface DriveCredentials {
   clientEmail: string;
   privateKey: string;
@@ -44,13 +58,27 @@ interface DriveAccessToken {
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 const DRIVE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
+const S3_SERVICE = 's3';
+const DOCUMENT_LINK_TTL_MINUTES = 30;
 
 let cachedDriveCredentials: DriveCredentials | null = null;
 let cachedDriveAccessToken: DriveAccessToken | null = null;
 const folderCache = new Map<string, string>();
 
+interface S3CompatibleConfig {
+  endpoint: URL;
+  bucket: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+}
+
 function storageConfigError(message: string, code: string): AppError {
   return new AppError(message, 500, code);
+}
+
+function managedFileNotFoundError(): AppError {
+  return new AppError('File not found', 404, 'MANAGED_FILE_NOT_FOUND');
 }
 
 function sanitizePathSegment(value: string): string {
@@ -65,6 +93,146 @@ function sanitizePathSegment(value: string): string {
 
 function normalizePrivateKey(privateKey: string): string {
   return privateKey.replace(/\\n/g, '\n').trim();
+}
+
+function normalizeEndpoint(endpoint: string): URL {
+  const url = new URL(endpoint);
+  url.pathname = url.pathname.replace(/\/+$/, '');
+  url.search = '';
+  url.hash = '';
+  return url;
+}
+
+function getS3CompatibleConfig(): S3CompatibleConfig {
+  const endpoint = env.S3_ENDPOINT;
+  const bucket = env.S3_BUCKET;
+  const accessKeyId = env.S3_ACCESS_KEY_ID;
+  const secretAccessKey = env.S3_SECRET_ACCESS_KEY;
+
+  if (!endpoint || !bucket || !accessKeyId || !secretAccessKey) {
+    throw storageConfigError('S3-compatible storage is not configured', 'S3_COMPATIBLE_NOT_CONFIGURED');
+  }
+
+  return {
+    endpoint: normalizeEndpoint(endpoint),
+    bucket,
+    region: env.S3_REGION || 'auto',
+    accessKeyId,
+    secretAccessKey,
+  };
+}
+
+function formatAmzDate(date: Date): { amzDate: string; dateStamp: string } {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+
+  return {
+    amzDate: `${year}${month}${day}T${hours}${minutes}${seconds}Z`,
+    dateStamp: `${year}${month}${day}`,
+  };
+}
+
+function sha256Hex(data: Buffer | string): string {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+function hmacSha256(key: Buffer | string, data: string): Buffer {
+  return createHmac('sha256', key).update(data).digest();
+}
+
+function encodeS3Key(storageKey: string): string {
+  return storageKey
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
+function buildS3ObjectUrl(storageKey: string): URL {
+  const config = getS3CompatibleConfig();
+  const url = new URL(config.endpoint.toString());
+  url.pathname = `/${config.bucket}/${encodeS3Key(storageKey)}`;
+  url.search = '';
+  url.hash = '';
+  return url;
+}
+
+function buildSignedS3Headers(input: {
+  method: string;
+  storageKey: string;
+  bodyHash: string;
+  contentType?: string | null;
+}): Record<string, string> {
+  const config = getS3CompatibleConfig();
+  const { amzDate, dateStamp } = formatAmzDate(new Date());
+  const url = buildS3ObjectUrl(input.storageKey);
+
+  const headers: Record<string, string> = {
+    host: url.host,
+    'x-amz-content-sha256': input.bodyHash,
+    'x-amz-date': amzDate,
+  };
+
+  if (input.contentType) {
+    headers['content-type'] = input.contentType;
+  }
+
+  const sortedHeaderKeys = Object.keys(headers).sort();
+  const canonicalHeaders = sortedHeaderKeys.map((key) => `${key}:${headers[key].trim()}\n`).join('');
+  const signedHeaders = sortedHeaderKeys.join(';');
+  const canonicalRequest = [
+    input.method.toUpperCase(),
+    url.pathname,
+    '',
+    canonicalHeaders,
+    signedHeaders,
+    input.bodyHash,
+  ].join('\n');
+
+  const credentialScope = `${dateStamp}/${config.region}/${S3_SERVICE}/aws4_request`;
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    sha256Hex(canonicalRequest),
+  ].join('\n');
+
+  const kDate = hmacSha256(`AWS4${config.secretAccessKey}`, dateStamp);
+  const kRegion = hmacSha256(kDate, config.region);
+  const kService = hmacSha256(kRegion, S3_SERVICE);
+  const signingKey = hmacSha256(kService, 'aws4_request');
+  const signature = createHmac('sha256', signingKey).update(stringToSign).digest('hex');
+
+  return {
+    ...headers,
+    authorization: `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+  };
+}
+
+async function sendS3CompatibleRequest(input: {
+  method: 'GET' | 'PUT' | 'DELETE';
+  storageKey: string;
+  body?: Buffer;
+  contentType?: string | null;
+}): Promise<Response> {
+  const body = input.body ?? Buffer.alloc(0);
+  const headers = buildSignedS3Headers({
+    method: input.method,
+    storageKey: input.storageKey,
+    bodyHash: sha256Hex(body),
+    contentType: input.contentType ?? null,
+  });
+
+  const response = await fetch(buildS3ObjectUrl(input.storageKey), {
+    method: input.method,
+    headers,
+    body: input.method === 'GET' || input.method === 'DELETE' ? undefined : body,
+  });
+
+  return response;
 }
 
 function loadDriveCredentialsFromEnv(): DriveCredentials {
@@ -91,7 +259,7 @@ async function loadDriveCredentials(): Promise<DriveCredentials> {
   }
 
   if (env.GOOGLE_APPLICATION_CREDENTIALS) {
-    const credentialsRaw = await fs.readFile(env.GOOGLE_APPLICATION_CREDENTIALS, 'utf8');
+    const credentialsRaw = await fsPromises.readFile(env.GOOGLE_APPLICATION_CREDENTIALS, 'utf8');
     const parsed = JSON.parse(credentialsRaw) as { client_email?: string; private_key?: string };
 
     if (!parsed.client_email || !parsed.private_key) {
@@ -364,11 +532,33 @@ async function uploadToGoogleDrive(input: ManagedFileStorageInput, storageKey: s
 
 async function uploadToLocalFileSystem(input: ManagedFileStorageInput, storageKey: string): Promise<ManagedFileStorageResult> {
   const destinationPath = path.join(FILE_STORAGE_ROOT, storageKey);
-  await fs.mkdir(path.dirname(destinationPath), { recursive: true });
-  await fs.writeFile(destinationPath, input.buffer);
+  await fsPromises.mkdir(path.dirname(destinationPath), { recursive: true });
+  await fsPromises.writeFile(destinationPath, input.buffer);
 
   return {
     storageProvider: StorageProvider.LOCAL,
+    storageKey,
+    storedFilename: input.storedFilename,
+    googleDriveFileId: null,
+    googleDriveWebViewLink: null,
+    googleDriveWebContentLink: null,
+  };
+}
+
+async function uploadToS3CompatibleStorage(input: ManagedFileStorageInput, storageKey: string): Promise<ManagedFileStorageResult> {
+  const response = await sendS3CompatibleRequest({
+    method: 'PUT',
+    storageKey,
+    body: input.buffer,
+    contentType: input.mimeType,
+  });
+
+  if (!response.ok) {
+    throw storageConfigError('S3-compatible file upload failed', 'S3_COMPATIBLE_UPLOAD_FAILED');
+  }
+
+  return {
+    storageProvider: 'S3_COMPATIBLE' as StorageProvider,
     storageKey,
     storedFilename: input.storedFilename,
     googleDriveFileId: null,
@@ -389,18 +579,43 @@ export async function storeManagedFile(input: ManagedFileStorageInput): Promise<
     return uploadToGoogleDrive(input, storageKey);
   }
 
+  if (env.STORAGE_PROVIDER === 'S3_COMPATIBLE') {
+    return uploadToS3CompatibleStorage(input, storageKey);
+  }
+
   return uploadToLocalFileSystem(input, storageKey);
 }
 
 async function deleteFromLocalFileSystem(storageKey: string): Promise<void> {
   const absolutePath = path.join(FILE_STORAGE_ROOT, storageKey);
   try {
-    await fs.unlink(absolutePath);
+    await fsPromises.unlink(absolutePath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       throw error;
     }
   }
+}
+
+async function readFromLocalFileSystem(storageKey: string): Promise<ManagedFileReadResult> {
+  const absolutePath = path.join(FILE_STORAGE_ROOT, storageKey);
+  let stats: Awaited<ReturnType<typeof fsPromises.stat>>;
+
+  try {
+    stats = await fsPromises.stat(absolutePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw managedFileNotFoundError();
+    }
+
+    throw error;
+  }
+
+  return {
+    stream: fs.createReadStream(absolutePath),
+    contentType: null,
+    contentLength: stats.size,
+  };
 }
 
 async function deleteFromGoogleDrive(fileId?: string | null): Promise<void> {
@@ -417,13 +632,86 @@ async function deleteFromGoogleDrive(fileId?: string | null): Promise<void> {
   }
 }
 
+async function readFromGoogleDrive(fileId?: string | null): Promise<ManagedFileReadResult> {
+  if (!fileId) {
+    throw storageConfigError('Google Drive file id is missing', 'GOOGLE_DRIVE_FILE_ID_MISSING');
+  }
+
+  const response = await driveRequest(`/drive/v3/files/${fileId}?alt=media`, {
+    method: 'GET',
+  });
+
+  if (response.status === 404) {
+    throw managedFileNotFoundError();
+  }
+
+  if (!response.ok || !response.body) {
+    throw storageConfigError('Google Drive file download failed', 'GOOGLE_DRIVE_DOWNLOAD_FAILED');
+  }
+
+  return {
+    stream: Readable.fromWeb(response.body as unknown as globalThis.ReadableStream<Uint8Array>),
+    contentType: response.headers.get('content-type'),
+    contentLength: response.headers.get('content-length') ? Number(response.headers.get('content-length')) : null,
+  };
+}
+
+async function deleteFromS3CompatibleStorage(storageKey: string): Promise<void> {
+  const response = await sendS3CompatibleRequest({
+    method: 'DELETE',
+    storageKey,
+  });
+
+  if (!response.ok && response.status !== 404) {
+    throw storageConfigError('S3-compatible file delete failed', 'S3_COMPATIBLE_DELETE_FAILED');
+  }
+}
+
+async function readFromS3CompatibleStorage(storageKey: string): Promise<ManagedFileReadResult> {
+  const response = await sendS3CompatibleRequest({
+    method: 'GET',
+    storageKey,
+  });
+
+  if (response.status === 404) {
+    throw managedFileNotFoundError();
+  }
+
+  if (!response.ok || !response.body) {
+    throw storageConfigError('S3-compatible file download failed', 'S3_COMPATIBLE_DOWNLOAD_FAILED');
+  }
+
+  return {
+    stream: Readable.fromWeb(response.body as unknown as globalThis.ReadableStream<Uint8Array>),
+    contentType: response.headers.get('content-type'),
+    contentLength: response.headers.get('content-length') ? Number(response.headers.get('content-length')) : null,
+  };
+}
+
 export async function deleteManagedFile(input: ManagedFileDeleteInput): Promise<void> {
   if (input.storageProvider === StorageProvider.GOOGLE_DRIVE) {
     await deleteFromGoogleDrive(input.googleDriveFileId);
     return;
   }
 
+  if (input.storageProvider === 'S3_COMPATIBLE') {
+    await deleteFromS3CompatibleStorage(input.storageKey);
+    return;
+  }
+
   await deleteFromLocalFileSystem(input.storageKey);
+}
+
+export async function readManagedFile(input: ManagedFileReadInput): Promise<ManagedFileReadResult> {
+  if (input.storageProvider === StorageProvider.GOOGLE_DRIVE) {
+    return readFromGoogleDrive(input.googleDriveFileId);
+  }
+
+  if (input.storageProvider === 'S3_COMPATIBLE') {
+    return readFromS3CompatibleStorage(input.storageKey);
+  }
+
+  return readFromLocalFileSystem(input.storageKey);
 }
 
 export function buildManagedStorageChecksum(buffer: Buffer): string {

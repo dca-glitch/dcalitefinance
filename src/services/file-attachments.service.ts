@@ -2,10 +2,12 @@ import { randomUUID } from 'node:crypto';
 import type { Request } from 'express';
 import type { Prisma } from '@prisma/client';
 import { AuditAction, AuditActorType, FileAttachmentEntityType, StorageProvider } from '@prisma/client';
+import { env } from '../config/env';
 import { prisma } from '../config/prisma';
 import { AppError } from '../errors/AppError';
 import { writeAuditLog } from './audit.service';
 import { buildManagedStorageChecksum, deleteManagedFile, storeManagedFile } from './managed-file-storage.service';
+import { signFileAttachmentDocumentToken } from '../utils/jwt';
 
 const mimeTypeExtensionMap: Record<string, string> = {
   'application/pdf': '.pdf',
@@ -41,6 +43,7 @@ export interface FileAttachmentUploadInput {
 
 export interface FileAttachmentListInput {
   tenantId: string;
+  request: Request;
   entityType: FileAttachmentEntityType;
   entityId: string;
 }
@@ -68,6 +71,25 @@ const fileAttachmentSelect = {
   createdAt: true,
 } satisfies Prisma.FileAttachmentSelect;
 
+const fileAttachmentDocumentSelect = {
+  id: true,
+  tenantId: true,
+  entityType: true,
+  entityId: true,
+  originalFilename: true,
+  storedFilename: true,
+  mimeType: true,
+  sizeBytes: true,
+  storageProvider: true,
+  storageKey: true,
+  googleDriveFileId: true,
+  googleDriveWebViewLink: true,
+  googleDriveWebContentLink: true,
+  uploadedByUserId: true,
+  createdAt: true,
+  deletedAt: true,
+} satisfies Prisma.FileAttachmentSelect;
+
 function attachmentNotFoundError(): AppError {
   return new AppError('File attachment not found', 404, 'FILE_ATTACHMENT_NOT_FOUND');
 }
@@ -78,6 +100,35 @@ function unsupportedFileTypeError(): AppError {
 
 function invalidFileUploadError(): AppError {
   return new AppError('Invalid file upload', 400, 'INVALID_FILE_UPLOAD');
+}
+
+function buildAttachmentDocumentLink(request: Request, attachmentId: string, token: string): string {
+  const baseUrl = `${request.protocol}://${request.get('host')}`;
+  const url = new URL(`${env.API_PREFIX}/file-attachments/${attachmentId}/document`, baseUrl);
+  url.searchParams.set('ticket', token);
+  return url.toString();
+}
+
+function mapAttachmentDocumentLink(attachment: {
+  id: string;
+  storageProvider: StorageProvider;
+  googleDriveWebViewLink: string | null;
+  googleDriveWebContentLink: string | null;
+}, request: Request): string | null {
+  if (!request.auth || !request.tenant) {
+    return null;
+  }
+
+  const token = signFileAttachmentDocumentToken({
+    sub: request.auth.userId,
+    sid: request.auth.sessionId,
+    tv: request.auth.tokenVersion,
+    tid: request.tenant.id,
+    aid: attachment.id,
+    typ: 'file-document',
+  });
+
+  return buildAttachmentDocumentLink(request, attachment.id, token);
 }
 
 function validateUploadFile(file: Express.Multer.File): string {
@@ -110,7 +161,17 @@ function mapAttachment(attachment: {
   googleDriveWebContentLink: string | null;
   uploadedByUserId: string;
   createdAt: Date;
-}): SafeFileAttachmentResponse {
+}, request: Request): SafeFileAttachmentResponse {
+  const documentLink = mapAttachmentDocumentLink(
+    {
+      id: attachment.id,
+      storageProvider: attachment.storageProvider,
+      googleDriveWebViewLink: attachment.googleDriveWebViewLink,
+      googleDriveWebContentLink: attachment.googleDriveWebContentLink,
+    },
+    request,
+  );
+
   return {
     id: attachment.id,
     entityType: attachment.entityType,
@@ -119,12 +180,29 @@ function mapAttachment(attachment: {
     mimeType: attachment.mimeType,
     sizeBytes: attachment.sizeBytes,
     storageProvider: attachment.storageProvider,
-    documentLink: attachment.googleDriveWebViewLink ?? attachment.googleDriveWebContentLink ?? null,
+    documentLink,
     webViewLink: attachment.googleDriveWebViewLink,
     webContentLink: attachment.googleDriveWebContentLink,
     uploadedByUserId: attachment.uploadedByUserId,
     createdAt: attachment.createdAt,
   };
+}
+
+export async function getFileAttachmentDocument(input: { tenantId: string; attachmentId: string }) {
+  const attachment = await prisma.fileAttachment.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      id: input.attachmentId,
+      deletedAt: null,
+    },
+    select: fileAttachmentDocumentSelect,
+  });
+
+  if (!attachment) {
+    throw attachmentNotFoundError();
+  }
+
+  return attachment;
 }
 
 export async function listFileAttachments(input: FileAttachmentListInput): Promise<SafeFileAttachmentResponse[]> {
@@ -141,7 +219,7 @@ export async function listFileAttachments(input: FileAttachmentListInput): Promi
     },
   });
 
-  return attachments.map(mapAttachment);
+  return attachments.map((attachment) => mapAttachment(attachment, input.request));
 }
 
 export async function uploadFileAttachment(input: FileAttachmentUploadInput): Promise<SafeFileAttachmentResponse> {
@@ -198,7 +276,7 @@ export async function uploadFileAttachment(input: FileAttachmentUploadInput): Pr
     } satisfies Prisma.InputJsonValue,
   });
 
-  return mapAttachment(attachment);
+  return mapAttachment(attachment, input.request);
 }
 
 export async function deleteFileAttachment(input: FileAttachmentDeleteInput): Promise<SafeFileAttachmentResponse> {
@@ -269,5 +347,5 @@ export async function deleteFileAttachment(input: FileAttachmentDeleteInput): Pr
     } satisfies Prisma.InputJsonValue,
   });
 
-  return mapAttachment(result.attachment);
+  return mapAttachment(result.attachment, input.request);
 }

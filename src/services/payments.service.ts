@@ -535,10 +535,11 @@ export async function reversePayment(input: ReversePaymentInput): Promise<SafePa
   return mapPayment(payment);
 }
 
-export async function listPaymentAttachments(input: { tenantId: string; paymentId: string }): Promise<SafeFileAttachmentResponse[]> {
+export async function listPaymentAttachments(input: { tenantId: string; request: Request; paymentId: string }): Promise<SafeFileAttachmentResponse[]> {
   await requirePayment(input);
   return listFileAttachments({
     tenantId: input.tenantId,
+    request: input.request,
     entityType: FileAttachmentEntityType.PAYMENT,
     entityId: input.paymentId,
   });

@@ -257,10 +257,11 @@ async function loadInvoiceForPdf(tenantId: string, invoiceId: string) {
   return invoice;
 }
 
-export async function listInvoiceDocuments(input: { tenantId: string; invoiceId: string }): Promise<SafeFileAttachmentResponse[]> {
+export async function listInvoiceDocuments(input: { tenantId: string; request: Request; invoiceId: string }): Promise<SafeFileAttachmentResponse[]> {
   const invoice = await loadInvoiceForPdf(input.tenantId, input.invoiceId);
   return listFileAttachments({
     tenantId: input.tenantId,
+    request: input.request,
     entityType: FileAttachmentEntityType.INVOICE,
     entityId: invoice.id,
   });
@@ -308,6 +309,7 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
   const originalFilename = `${invoice.invoiceNumber}.pdf`;
   const existingDocuments = await listFileAttachments({
     tenantId: input.tenantId,
+    request: input.request,
     entityType: FileAttachmentEntityType.INVOICE,
     entityId: invoice.id,
   });

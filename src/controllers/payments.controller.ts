@@ -153,6 +153,7 @@ export async function listPaymentAttachmentsHandler(req: Request, res: Response)
   const paymentId = paymentIdSchema.parse(req.params.paymentId);
   const attachments = await listPaymentAttachmentsService({
     tenantId: context.tenantId,
+    request: req,
     paymentId,
   });
 

@@ -16,6 +16,7 @@ import { issuerProfileRoutes } from './routes/issuer-profile.routes';
 import { billsRoutes } from './routes/bills.routes';
 import { recurringInvoicesRoutes } from './routes/recurring-invoices.routes';
 import { paymentsRoutes } from './routes/payments.routes';
+import { fileAttachmentsRoutes } from './routes/file-attachments.routes';
 import { rolesRoutes } from './routes/roles.routes';
 import { tenantRoutes } from './routes/tenant.routes';
 import { healthRoutes } from './routes/health.routes';
@@ -78,6 +79,7 @@ export function createApp(): express.Express {
   app.use(env.API_PREFIX + '/bills', appApiRateLimiter, billsRoutes);
   app.use(env.API_PREFIX + '/recurring-invoices', appApiRateLimiter, recurringInvoicesRoutes);
   app.use(env.API_PREFIX + '/payments', appApiRateLimiter, paymentsRoutes);
+  app.use(env.API_PREFIX + '/file-attachments', appApiRateLimiter, fileAttachmentsRoutes);
   app.use(env.API_PREFIX + '/roles', appApiRateLimiter, rolesRoutes);
 
   app.use(notFoundMiddleware);

@@ -13,7 +13,7 @@ const envSchema = z
     CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
 
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(0),
-    STORAGE_PROVIDER: z.enum(['LOCAL', 'GOOGLE_DRIVE']).default('LOCAL'),
+    STORAGE_PROVIDER: z.enum(['LOCAL', 'GOOGLE_DRIVE', 'S3_COMPATIBLE']).default('LOCAL'),
     LOCAL_UPLOAD_DIR: z.string().min(1).default('storage/uploads'),
     GOOGLE_DRIVE_ROOT_FOLDER_ID: z.string().min(1).optional(),
     GOOGLE_DRIVE_ROOT_FOLDER_NAME: z.string().min(1).optional(),
@@ -21,6 +21,11 @@ const envSchema = z
     GOOGLE_DRIVE_PRIVATE_KEY: z.string().min(1).optional(),
     GOOGLE_DRIVE_CLIENT_EMAIL: z.string().email().optional(),
     GOOGLE_APPLICATION_CREDENTIALS: z.string().min(1).optional(),
+    S3_ENDPOINT: z.string().url().optional(),
+    S3_BUCKET: z.string().min(1).optional(),
+    S3_REGION: z.string().min(1).default('auto'),
+    S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+    S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
 
     ACCESS_TOKEN_SECRET: z.string().min(32),
     ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(15),
@@ -79,6 +84,25 @@ const envSchema = z
           path: ['GOOGLE_DRIVE_PRIVATE_KEY'],
           message: 'Google Drive service account credentials are required when STORAGE_PROVIDER=GOOGLE_DRIVE',
         });
+      }
+    }
+
+    if (value.STORAGE_PROVIDER === 'S3_COMPATIBLE') {
+      const requiredS3Fields: Array<keyof typeof value> = [
+        'S3_ENDPOINT',
+        'S3_BUCKET',
+        'S3_ACCESS_KEY_ID',
+        'S3_SECRET_ACCESS_KEY',
+      ];
+
+      for (const field of requiredS3Fields) {
+        if (!value[field]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [field],
+            message: `${field} is required when STORAGE_PROVIDER=S3_COMPATIBLE`,
+          });
+        }
       }
     }
   });

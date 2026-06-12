@@ -144,7 +144,7 @@ export function InvoiceDocumentsPanel({
                     Open document
                   </a>
                 ) : (
-                  <span className="text-sm text-slate-500">No external document link available</span>
+                  <span className="text-sm text-slate-500">No document link available</span>
                 )}
               </div>
             );

@@ -727,10 +727,11 @@ async function requireBillAttachmentBill(tenantId: string, billId: string): Prom
   return bill;
 }
 
-export async function listBillAttachments(input: { tenantId: string; billId: string }): Promise<SafeFileAttachmentResponse[]> {
+export async function listBillAttachments(input: { tenantId: string; request: Request; billId: string }): Promise<SafeFileAttachmentResponse[]> {
   await requireBillAttachmentBill(input.tenantId, input.billId);
   return listFileAttachments({
     tenantId: input.tenantId,
+    request: input.request,
     entityType: FileAttachmentEntityType.BILL,
     entityId: input.billId,
   });

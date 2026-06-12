@@ -270,6 +270,7 @@ export async function listInvoiceDocumentsHandler(req: Request, res: Response): 
   const invoiceId = invoiceIdSchema.parse(req.params.invoiceId);
   const documents = await listInvoiceDocumentsService({
     tenantId: context.tenantId,
+    request: req,
     invoiceId,
   });
 

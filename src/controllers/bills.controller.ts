@@ -180,7 +180,7 @@ export async function archiveBillHandler(req: Request, res: Response): Promise<v
 export async function listBillAttachmentsHandler(req: Request, res: Response): Promise<void> {
   const context = requireAuthAndTenant(req);
   const billId = billIdSchema.parse(req.params.billId);
-  const attachments = await listBillAttachmentsService({ tenantId: context.tenantId, billId });
+  const attachments = await listBillAttachmentsService({ tenantId: context.tenantId, request: req, billId });
   res.status(200).json(toJsonSafe({ success: true, data: { attachments } }));
 }
 
