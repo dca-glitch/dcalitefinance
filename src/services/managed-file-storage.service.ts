@@ -103,6 +103,17 @@ function normalizeEndpoint(endpoint: string): URL {
   return url;
 }
 
+function resolveStoragePath(storageKey: string): string {
+  const absolutePath = path.resolve(FILE_STORAGE_ROOT, storageKey);
+  const rootPath = `${FILE_STORAGE_ROOT}${path.sep}`;
+
+  if (!absolutePath.startsWith(rootPath) && absolutePath !== FILE_STORAGE_ROOT) {
+    throw new AppError('Invalid storage key path', 400, 'INVALID_STORAGE_KEY_PATH');
+  }
+
+  return absolutePath;
+}
+
 function getS3CompatibleConfig(): S3CompatibleConfig {
   const endpoint = env.S3_ENDPOINT;
   const bucket = env.S3_BUCKET;
@@ -531,7 +542,7 @@ async function uploadToGoogleDrive(input: ManagedFileStorageInput, storageKey: s
 }
 
 async function uploadToLocalFileSystem(input: ManagedFileStorageInput, storageKey: string): Promise<ManagedFileStorageResult> {
-  const destinationPath = path.join(FILE_STORAGE_ROOT, storageKey);
+  const destinationPath = resolveStoragePath(storageKey);
   await fsPromises.mkdir(path.dirname(destinationPath), { recursive: true });
   await fsPromises.writeFile(destinationPath, input.buffer);
 
@@ -587,7 +598,7 @@ export async function storeManagedFile(input: ManagedFileStorageInput): Promise<
 }
 
 async function deleteFromLocalFileSystem(storageKey: string): Promise<void> {
-  const absolutePath = path.join(FILE_STORAGE_ROOT, storageKey);
+  const absolutePath = resolveStoragePath(storageKey);
   try {
     await fsPromises.unlink(absolutePath);
   } catch (error) {
@@ -598,7 +609,7 @@ async function deleteFromLocalFileSystem(storageKey: string): Promise<void> {
 }
 
 async function readFromLocalFileSystem(storageKey: string): Promise<ManagedFileReadResult> {
-  const absolutePath = path.join(FILE_STORAGE_ROOT, storageKey);
+  const absolutePath = resolveStoragePath(storageKey);
   let stats: Awaited<ReturnType<typeof fsPromises.stat>>;
 
   try {
