@@ -106,6 +106,161 @@ function textWidth(text: string, fontSize: number, bold = false): number {
   return text.length * fontSize * factor;
 }
 
+const HELVETICA_WIDTHS: Record<string, number> = {
+  ' ': 278,
+  '.': 278,
+  ',': 278,
+  ':': 278,
+  ';': 278,
+  '-': 333,
+  '/': 278,
+  '0': 556,
+  '1': 556,
+  '2': 556,
+  '3': 556,
+  '4': 556,
+  '5': 556,
+  '6': 556,
+  '7': 556,
+  '8': 556,
+  '9': 556,
+  'A': 667,
+  'B': 667,
+  'C': 722,
+  'D': 722,
+  'E': 667,
+  'F': 611,
+  'G': 778,
+  'H': 722,
+  'I': 278,
+  'J': 556,
+  'K': 667,
+  'L': 556,
+  'M': 833,
+  'N': 722,
+  'O': 778,
+  'P': 667,
+  'Q': 778,
+  'R': 722,
+  'S': 667,
+  'T': 611,
+  'U': 722,
+  'V': 667,
+  'W': 944,
+  'X': 667,
+  'Y': 667,
+  'Z': 611,
+  'a': 556,
+  'b': 556,
+  'c': 500,
+  'd': 556,
+  'e': 556,
+  'f': 278,
+  'g': 556,
+  'h': 556,
+  'i': 222,
+  'j': 222,
+  'k': 500,
+  'l': 222,
+  'm': 833,
+  'n': 556,
+  'o': 556,
+  'p': 556,
+  'q': 556,
+  'r': 333,
+  's': 500,
+  't': 278,
+  'u': 556,
+  'v': 500,
+  'w': 722,
+  'x': 500,
+  'y': 500,
+  'z': 500,
+};
+
+const HELVETICA_BOLD_WIDTHS: Record<string, number> = {
+  ' ': 278,
+  '.': 278,
+  ',': 278,
+  ':': 333,
+  ';': 333,
+  '-': 333,
+  '/': 278,
+  '0': 556,
+  '1': 556,
+  '2': 556,
+  '3': 556,
+  '4': 556,
+  '5': 556,
+  '6': 556,
+  '7': 556,
+  '8': 556,
+  '9': 556,
+  'A': 722,
+  'B': 722,
+  'C': 722,
+  'D': 722,
+  'E': 667,
+  'F': 611,
+  'G': 778,
+  'H': 722,
+  'I': 278,
+  'J': 556,
+  'K': 722,
+  'L': 611,
+  'M': 833,
+  'N': 722,
+  'O': 778,
+  'P': 667,
+  'Q': 778,
+  'R': 722,
+  'S': 667,
+  'T': 611,
+  'U': 722,
+  'V': 667,
+  'W': 944,
+  'X': 667,
+  'Y': 667,
+  'Z': 611,
+  'a': 556,
+  'b': 556,
+  'c': 500,
+  'd': 556,
+  'e': 556,
+  'f': 333,
+  'g': 556,
+  'h': 556,
+  'i': 278,
+  'j': 278,
+  'k': 556,
+  'l': 278,
+  'm': 833,
+  'n': 556,
+  'o': 556,
+  'p': 556,
+  'q': 556,
+  'r': 444,
+  's': 500,
+  't': 333,
+  'u': 556,
+  'v': 500,
+  'w': 722,
+  'x': 500,
+  'y': 500,
+  'z': 500,
+};
+
+function accuratePdfTextWidth(text: string, fontSize: number, bold = false): number {
+  const widths = bold ? HELVETICA_BOLD_WIDTHS : HELVETICA_WIDTHS;
+  let totalUnits = 0;
+
+  for (const char of text) {
+    totalUnits += widths[char] ?? widths[' '];
+  }
+
+  return (totalUnits / 1000) * fontSize;
+}
+
 function wrapText(text: string, maxChars: number): string[] {
   const normalized = text.replace(/\s+/g, ' ').trim();
   if (!normalized) {
@@ -256,6 +411,27 @@ function text(
   ].join('\n');
 }
 
+function drawPdfRightText(
+  commands: string[],
+  rightX: number,
+  y: number,
+  value: string,
+  options: {
+    font: 'F1' | 'F2';
+    size: number;
+    color?: readonly [number, number, number];
+  },
+): void {
+  const measuredWidth = accuratePdfTextWidth(value, options.size, options.font === 'F2');
+  commands.push(
+    text(rightX - measuredWidth, y, value, {
+      font: options.font,
+      size: options.size,
+      color: options.color,
+    }),
+  );
+}
+
 function multilineText(
   x: number,
   y: number,
@@ -291,19 +467,16 @@ function filterLines(values: Array<string | null | undefined>): string[] {
 function buildAddressBlock(profile: PdfIssuerProfile): string[] {
   const addressLine = [profile.addressLine1, profile.addressLine2].filter((value): value is string => Boolean(value)).join(', ');
   const localityLine = [profile.city, profile.state, profile.postalCode].filter((value): value is string => Boolean(value)).join(', ');
-  const contactLine = [profile.email ? `Email: ${profile.email}` : null, profile.phone ? `Phone: ${profile.phone}` : null, profile.website ? `Web: ${profile.website}` : null]
-    .filter((value): value is string => Boolean(value))
-    .join(' | ');
-  const complianceLine = [profile.taxId ? `Tax ID: ${profile.taxId}` : null, profile.companyRegistrationNumber ? `Registration No.: ${profile.companyRegistrationNumber}` : null]
-    .filter((value): value is string => Boolean(value))
-    .join(' | ');
 
   return filterLines([
     addressLine || null,
     localityLine || null,
     profile.country,
-    contactLine || null,
-    complianceLine || null,
+    profile.email ? `Email: ${profile.email}` : null,
+    profile.phone ? `Phone: ${profile.phone}` : null,
+    profile.website ? `Website: ${profile.website}` : null,
+    profile.taxId ? `Tax ID: ${profile.taxId}` : null,
+    profile.companyRegistrationNumber ? `Registration No.: ${profile.companyRegistrationNumber}` : null,
   ]);
 }
 
@@ -314,16 +487,15 @@ function buildClientBlock(client: PdfInvoiceClient | null): string[] {
 
   const addressLine = [client.billingAddressLine1, client.billingAddressLine2].filter((value): value is string => Boolean(value)).join(', ');
   const localityLine = [client.billingCity, client.billingState, client.billingPostalCode].filter((value): value is string => Boolean(value)).join(', ');
-  const contactLine = [client.email ? `Email: ${client.email}` : null, client.phone ? `Phone: ${client.phone}` : null, client.website ? `Web: ${client.website}` : null]
-    .filter((value): value is string => Boolean(value))
-    .join(' | ');
 
   return filterLines([
     client.name,
     addressLine || null,
     localityLine || null,
     client.billingCountry,
-    contactLine || null,
+    client.email ? `Email: ${client.email}` : null,
+    client.phone ? `Phone: ${client.phone}` : null,
+    client.website ? `Website: ${client.website}` : null,
     client.taxId ? `Tax ID: ${client.taxId}` : null,
   ]);
 }
@@ -512,12 +684,12 @@ function renderInvoiceHeader(
   topY: number,
 ): number {
   const issuerName = normalizeOptionalText(issuerProfile.issuerLegalName) ?? issuerProfile.issuerDisplayName;
-  const invoiceTitleX = PAGE_WIDTH - RIGHT_MARGIN;
-  const metadataX = PAGE_WIDTH - RIGHT_MARGIN;
+  const issuerNameDisplay = issuerName.toUpperCase();
+  const invoiceRightX = PAGE_WIDTH - RIGHT_MARGIN;
   const companyBlock = buildAddressBlock(issuerProfile);
-  const issuerNameSize = textWidth(issuerName, 18, true) > 250 ? 16 : 18;
+  const issuerNameSize = textWidth(issuerNameDisplay, 18, true) > 250 ? 16 : 18;
 
-  commands.push(text(LEFT_MARGIN, topY, issuerName, { font: 'F2', size: issuerNameSize, color: PURPLE }));
+  commands.push(text(LEFT_MARGIN, topY, issuerNameDisplay, { font: 'F2', size: issuerNameSize, color: PURPLE }));
   const issuerBlockBottom = pushTextBlock(commands, LEFT_MARGIN, topY - 18, companyBlock, {
     font: 'F1',
     size: 9,
@@ -525,7 +697,11 @@ function renderInvoiceHeader(
     lineHeight: 11,
   });
 
-  commands.push(text(invoiceTitleX, topY + 1, 'INVOICE', { font: 'F2', size: 20, color: NAVY, align: 'right' }));
+  drawPdfRightText(commands, invoiceRightX, topY + 1, 'INVOICE', {
+    font: 'F2',
+    size: 20,
+    color: NAVY,
+  });
 
   const metaY = topY - 24;
   const metaLineHeight = 12;
@@ -535,16 +711,53 @@ function renderInvoiceHeader(
   const issueDate = formatDate(invoice.issueDate);
   const dueDate = formatDate(invoice.dueDate);
 
-  commands.push(text(metadataX, metaY, 'Invoice No.', { font: 'F1', size: 8.5, color: metaLabelColor, align: 'right' }));
-  commands.push(text(metadataX, metaY - metaLineHeight, invoiceNumber, { font: 'F2', size: 10.5, color: metaValueColor, align: 'right' }));
-  commands.push(text(metadataX, metaY - metaLineHeight * 2.2, 'Issue Date', { font: 'F1', size: 8.5, color: metaLabelColor, align: 'right' }));
-  commands.push(text(metadataX, metaY - metaLineHeight * 3.2, issueDate, { font: 'F2', size: 10.5, color: metaValueColor, align: 'right' }));
-  commands.push(text(metadataX, metaY - metaLineHeight * 4.4, 'Due Date', { font: 'F1', size: 8.5, color: metaLabelColor, align: 'right' }));
-  commands.push(text(metadataX, metaY - metaLineHeight * 5.4, dueDate, { font: 'F2', size: 10.5, color: metaValueColor, align: 'right' }));
+  const metadataPairs = [
+    ['Invoice No.', invoiceNumber],
+    ['Issue Date', issueDate],
+    ['Due Date', dueDate],
+  ] as const;
 
-  const metadataBottom = metaY - metaLineHeight * 5.4 - 14;
+  const invoiceNoLabelY = metaY;
+  const invoiceNoValueY = invoiceNoLabelY - 12;
+  const issueDateLabelY = invoiceNoValueY - 14;
+  const issueDateValueY = issueDateLabelY - 12;
+  const dueDateLabelY = issueDateValueY - 14;
+  const dueDateValueY = dueDateLabelY - 12;
+
+  drawPdfRightText(commands, invoiceRightX, invoiceNoLabelY, metadataPairs[0][0], {
+    font: 'F1',
+    size: 8.5,
+    color: metaLabelColor,
+  });
+  drawPdfRightText(commands, invoiceRightX, invoiceNoValueY, metadataPairs[0][1], {
+    font: 'F2',
+    size: 10.5,
+    color: metaValueColor,
+  });
+  drawPdfRightText(commands, invoiceRightX, issueDateLabelY, metadataPairs[1][0], {
+    font: 'F1',
+    size: 8.5,
+    color: metaLabelColor,
+  });
+  drawPdfRightText(commands, invoiceRightX, issueDateValueY, metadataPairs[1][1], {
+    font: 'F2',
+    size: 10.5,
+    color: metaValueColor,
+  });
+  drawPdfRightText(commands, invoiceRightX, dueDateLabelY, metadataPairs[2][0], {
+    font: 'F1',
+    size: 8.5,
+    color: metaLabelColor,
+  });
+  drawPdfRightText(commands, invoiceRightX, dueDateValueY, metadataPairs[2][1], {
+    font: 'F2',
+    size: 10.5,
+    color: metaValueColor,
+  });
+
+  const metadataBottom = dueDateValueY + 4;
   const dividerY = Math.min(issuerBlockBottom, metadataBottom) - 12;
-  commands.push(line(LEFT_MARGIN, dividerY, PAGE_WIDTH - RIGHT_MARGIN, dividerY, NAVY, 1.1));
+  commands.push(line(LEFT_MARGIN, dividerY, PAGE_WIDTH - RIGHT_MARGIN, dividerY, NAVY, 0.75));
 
   const billToTitleY = dividerY - 22;
   commands.push(text(LEFT_MARGIN, billToTitleY, sectionTitle('Bill To'), { font: 'F2', size: 8.2, color: MUTED }));
@@ -615,7 +828,7 @@ function renderTableRows(
 
     const rowTop = currentY;
     const rowBottom = rowTop - row.height;
-    const descriptionStartY = rowTop - 12;
+    const descriptionStartY = rowTop - 11;
     const descriptionLines = row.descriptionLines.length > 0 ? row.descriptionLines : [''];
 
     commands.push(line(LEFT_MARGIN, rowBottom, PAGE_WIDTH - RIGHT_MARGIN, rowBottom, BORDER, 0.7));
@@ -631,8 +844,8 @@ function renderTableRows(
 
     let descY = descriptionStartY;
     for (const descLine of descriptionLines) {
-      commands.push(text(columns[1].x + 2, descY, descLine, { font: 'F1', size: 8.9, color: TEXT }));
-      descY -= 11;
+      commands.push(text(columns[1].x + 10, descY, descLine, { font: 'F1', size: 8.9, color: TEXT }));
+      descY -= 11.5;
     }
 
     commands.push(
@@ -688,8 +901,6 @@ function renderSummaryBox(commands: string[], invoice: PdfInvoice, topY: number)
   const padding = 10;
   const totalHeight = padding * 2 + summaryLines.length * lineHeight + 2;
 
-  commands.push(rectStroke(boxX, topY - totalHeight, boxWidth, totalHeight, BORDER, 0.9));
-
   let currentY = topY - padding - 8;
   for (const [index, summaryLine] of summaryLines.entries()) {
     const isTotal = index === summaryLines.length - 1 && summaryLine.emphasized;
@@ -699,6 +910,7 @@ function renderSummaryBox(commands: string[], invoice: PdfInvoice, topY: number)
     const valueX = boxX + boxWidth - padding;
 
     if (isTotal) {
+      commands.push(line(boxX + 1, currentY - 8, boxX + boxWidth - 1, currentY - 8, LIGHT_BORDER, 0.7));
       commands.push(rectFill(boxX, currentY - 11, boxWidth, rowHeight + 2, SUMMARY_FILL));
       commands.push(
         text(labelX, rowY, summaryLine.label, {
@@ -876,10 +1088,11 @@ export function buildInvoicePdfBuffer(input: BuildInvoicePdfBufferInput): Buffer
     remainingRows = remainingRows.slice(rowResult.renderedRows);
 
     if (remainingRows.length === 0) {
-      const summaryTopY = rowResult.bottomY - 20;
+  const summaryTopY = rowResult.bottomY - 32;
       const summaryBottomY = renderSummaryBox(commands, invoice, summaryTopY);
-      const separatorY = summaryBottomY - 18;
-      commands.push(line(LEFT_MARGIN, separatorY, PAGE_WIDTH - RIGHT_MARGIN, separatorY, LIGHT_BORDER, 0.7));
+      const separatorY = summaryBottomY - 20;
+      commands.push(line(LEFT_MARGIN, separatorY, PAGE_WIDTH - RIGHT_MARGIN, separatorY, LIGHT_BORDER, 0.6));
+      commands.push(line(LEFT_MARGIN, BOTTOM_MARGIN + 6, PAGE_WIDTH - RIGHT_MARGIN, BOTTOM_MARGIN + 6, LIGHT_BORDER, 0.5));
       renderBottomSections(commands, issuerProfile, invoice, separatorY - 14);
     }
 
