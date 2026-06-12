@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { BillStatus } from '@prisma/client';
 import { z } from 'zod';
 import { AppError } from '../errors/AppError';
+import { paymentMethodOptions } from '../constants/payment-methods';
 import { toJsonSafe } from '../utils/json';
 import {
   archiveBill as archiveBillService,
@@ -34,7 +35,7 @@ const billBodySchema = z.object({
   dueDate: z.coerce.date().nullable().optional(),
   status: billStatusSchema.optional(),
   amountMinor: z.number().int().min(0),
-  paymentMethod: z.string().trim().min(1).max(80).nullable().optional(),
+  paymentMethod: z.enum(paymentMethodOptions).nullable().optional(),
   paymentReference: z.string().trim().min(1).max(120).nullable().optional(),
   notes: z.string().trim().min(1).max(5000).nullable().optional(),
 });

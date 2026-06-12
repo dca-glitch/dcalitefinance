@@ -352,6 +352,9 @@ model Invoice {
   dueDate        DateTime     @map("due_date") @db.Date
   notes          String?      @db.Text
   terms          String?      @db.Text
+  taxRateBasisPoints Int      @default(0) @map("tax_rate_basis_points")
+  taxAmountMinor Int          @default(0) @map("tax_amount_minor")
+  discountMinor  Int          @default(0) @map("discount_minor")
   subtotalMinor  Int          @map("subtotal_minor")
   totalMinor     Int          @map("total_minor")
   paidAmountMinor Int          @default(0) @map("paid_amount_minor")

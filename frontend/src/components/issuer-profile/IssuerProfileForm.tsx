@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import { getCountryOptions } from '../../lib/country-options';
 import type { IssuerProfileRecord, IssuerProfileUpsertInput } from '../../types/issuer-profile';
 import { issuerProfileCurrencyOptions } from '../../types/issuer-profile';
 
@@ -136,10 +137,11 @@ export function IssuerProfileForm({ initialProfile, error = null, loading = fals
             value={form.companyRegistrationNumber}
           />
           <label className="block">
-            <span className="mb-2 block text-sm font-medium text-slate-200">Currency code</span>
+            <span className="mb-2 block text-sm font-medium text-slate-200">Currency code *</span>
             <select
               className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
               onChange={(event) => setForm((current) => ({ ...current, currencyCode: event.target.value }))}
+              required
               value={form.currencyCode}
             >
               {issuerProfileCurrencyOptions.map((currencyCode) => (
@@ -188,12 +190,21 @@ export function IssuerProfileForm({ initialProfile, error = null, loading = fals
             onChange={(event) => setForm((current) => ({ ...current, postalCode: event.target.value }))}
             value={form.postalCode}
           />
-          <Input
-            label="Country"
-            maxLength={120}
-            onChange={(event) => setForm((current) => ({ ...current, country: event.target.value }))}
-            value={form.country}
-          />
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-200">Country</span>
+            <select
+              className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+              onChange={(event) => setForm((current) => ({ ...current, country: event.target.value }))}
+              value={form.country}
+            >
+              <option value="">No country</option>
+              {getCountryOptions(form.country).map((country) => (
+                <option key={country} value={country}>
+                  {country}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       </section>
 

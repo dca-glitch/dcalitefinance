@@ -34,6 +34,14 @@ export function clearAccessToken(): void {
   window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
 }
 
+export function notifyAuthChange(): void {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
+}
+
 export function isAuthenticated(): boolean {
   return getAccessToken() !== null;
 }
@@ -57,3 +65,5 @@ function subscribeToAuthStore(onStoreChange: () => void): () => void {
 export function useIsAuthenticated(): boolean {
   return useSyncExternalStore(subscribeToAuthStore, isAuthenticated, () => false);
 }
+
+export { AUTH_CHANGE_EVENT };

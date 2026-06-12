@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import { getCountryOptions } from '../../lib/country-options';
 import type { ClientMutationInput, ClientRecord } from '../../types/client';
 
 interface ClientFormProps {
@@ -177,12 +178,21 @@ export function ClientForm({ error = null, initialClient = null, loading = false
             onChange={(event) => setForm((current) => ({ ...current, billingPostalCode: event.target.value }))}
             value={form.billingPostalCode}
           />
-          <Input
-            label="Billing country"
-            maxLength={120}
-            onChange={(event) => setForm((current) => ({ ...current, billingCountry: event.target.value }))}
-            value={form.billingCountry}
-          />
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-200">Billing country</span>
+            <select
+              className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+              onChange={(event) => setForm((current) => ({ ...current, billingCountry: event.target.value }))}
+              value={form.billingCountry}
+            >
+              <option value="">No country</option>
+              {getCountryOptions(form.billingCountry).map((country) => (
+                <option key={country} value={country}>
+                  {country}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       </section>
 

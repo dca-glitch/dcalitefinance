@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
+import { getPaymentMethodOptions } from '../../lib/payment-method-options';
 import type { ExpenseCategoryRecord } from '../../types/expense-category';
 import type { BillMutationInput, BillRecord } from '../../types/bill';
 import type { VendorRecord } from '../../types/vendor';
@@ -188,12 +189,22 @@ export function BillForm({
             type="number"
             value={form.amount}
           />
-          <Input
-            label="Payment method"
-            maxLength={80}
-            onChange={(event) => setForm((current) => ({ ...current, paymentMethod: event.target.value }))}
-            value={form.paymentMethod}
-          />
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-200">Payment method *</span>
+              <select
+                className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+                onChange={(event) => setForm((current) => ({ ...current, paymentMethod: event.target.value }))}
+                required
+                value={form.paymentMethod}
+              >
+                <option value="">Choose a payment method</option>
+              {getPaymentMethodOptions(form.paymentMethod).map((paymentMethod) => (
+                  <option key={paymentMethod} value={paymentMethod}>
+                    {paymentMethod}
+                  </option>
+                ))}
+              </select>
+          </label>
           <Input
             className="lg:col-span-2"
             label="Payment reference"

@@ -13,7 +13,7 @@ import { archiveInvoice, cancelInvoice, createInvoice, getInvoice, issueInvoice,
 import { generateInvoicePdf, listInvoiceDocuments } from '../lib/invoice-documents-api';
 import { getIssuerProfile } from '../lib/issuer-profile-api';
 import { listProjects } from '../lib/projects-api';
-import { listServiceItems } from '../lib/service-items-api';
+import { createServiceItem, listServiceItems } from '../lib/service-items-api';
 import { useAuth } from '../hooks/useAuth';
 import type { ClientRecord } from '../types/client';
 import type { InvoiceDocumentRecord } from '../types/invoice-document';
@@ -42,6 +42,8 @@ interface InvoiceFormState {
   projectId: string;
   notes: string;
   terms: string;
+  taxPercent: string;
+  discountMinor: string;
   lines: InvoiceFormLineState[];
 }
 
@@ -92,9 +94,81 @@ function parseMinorAmount(value: string): number | null {
   return Math.round(parsed * 100);
 }
 
+function parsePercentAmount(value: string): number | null {
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+    return null;
+  }
+
+  return parsed;
+}
+
 function normalizeOptionalValue(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function calculateInvoiceSummary(form: InvoiceFormState): {
+  subtotalMinor: number;
+  taxPercent: number;
+  taxAmountMinor: number;
+  discountMinor: number;
+  totalMinor: number;
+} {
+  const subtotalMinor = form.lines.reduce((sum, line, index) => {
+    const description = line.description.trim();
+    const quantity = Number(line.quantity);
+    const unitPriceMinor = parseMinorAmount(line.unitPrice);
+
+    if (!description) {
+      throw new Error(`Line ${index + 1} requires a description.`);
+    }
+
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      throw new Error(`Line ${index + 1} requires a quantity of at least 1.`);
+    }
+
+    if (unitPriceMinor === null) {
+      throw new Error(`Line ${index + 1} requires a valid unit price.`);
+    }
+
+    return sum + quantity * unitPriceMinor;
+  }, 0);
+
+  const taxInput = form.taxPercent.trim();
+  const discountInput = form.discountMinor.trim();
+  const taxPercent = taxInput ? parsePercentAmount(taxInput) : 0;
+  const discountMinor = discountInput ? parseMinorAmount(discountInput) : 0;
+
+  if (taxInput && taxPercent === null) {
+    throw new Error('Tax must be a valid percentage between 0 and 100.');
+  }
+
+  if (discountInput && discountMinor === null) {
+    throw new Error('Discount must be a valid amount.');
+  }
+
+  const resolvedTaxPercent = taxPercent ?? 0;
+  const resolvedDiscountMinor = discountMinor ?? 0;
+  const taxAmountMinor = Math.round((subtotalMinor * resolvedTaxPercent * 100) / 10_000);
+  const totalMinor = subtotalMinor + taxAmountMinor - resolvedDiscountMinor;
+
+  if (totalMinor < 0) {
+    throw new Error('Discount cannot exceed the invoice total.');
+  }
+
+  return {
+    subtotalMinor,
+    taxPercent: resolvedTaxPercent,
+    taxAmountMinor,
+    discountMinor: resolvedDiscountMinor,
+    totalMinor,
+  };
 }
 
 function buildBlankLine(serviceItemId = ''): InvoiceFormLineState {
@@ -115,6 +189,8 @@ function buildInitialForm(): InvoiceFormState {
     projectId: '',
     notes: '',
     terms: '',
+    taxPercent: '',
+    discountMinor: '',
     lines: [buildBlankLine()],
   };
 }
@@ -127,6 +203,8 @@ function buildFormFromInvoice(invoice: InvoiceRecord): InvoiceFormState {
     projectId: invoice.projectId ?? '',
     notes: invoice.notes ?? '',
     terms: invoice.terms ?? '',
+    taxPercent: invoice.taxPercent > 0 ? invoice.taxPercent.toFixed(2) : '',
+    discountMinor: invoice.discountMinor > 0 ? (invoice.discountMinor / 100).toFixed(2) : '',
     lines: invoice.lines.length
       ? invoice.lines.map((line) => ({
           description: line.description,
@@ -170,30 +248,32 @@ function InvoiceLinesEditor({
   onAddLine,
   onChangeLine,
   onRemoveLine,
+  onSelectServiceItem,
   serviceItems,
 }: {
   lines: InvoiceFormLineState[];
   onAddLine: () => void;
   onChangeLine: (index: number, nextLine: InvoiceFormLineState) => void;
+  onSelectServiceItem: (index: number, serviceItemId: string) => void;
   onRemoveLine: (index: number) => void;
   serviceItems: ServiceItemRecord[];
 }) {
   return (
     <div className="space-y-4">
       {lines.map((line, index) => (
-        <div className="rounded-3xl border border-slate-800 bg-slate-950/40 p-4" key={`${index}-${line.serviceItemId}`}>
+        <div className="rounded-3xl border border-slate-800 bg-slate-950/40 p-4" key={index}>
           <div className="grid gap-4 lg:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-medium text-slate-200">Service item</span>
               <select
                 className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
-                onChange={(event) => onChangeLine(index, { ...line, serviceItemId: event.target.value })}
+                onChange={(event) => onSelectServiceItem(index, event.target.value)}
                 value={line.serviceItemId}
               >
                 <option value="">No service item</option>
                 {serviceItems.map((serviceItem) => (
                   <option key={serviceItem.id} value={serviceItem.id}>
-                    {serviceItem.name} ({formatMinorAmount(serviceItem.unitPriceMinor)})
+                    {serviceItem.name}
                   </option>
                 ))}
               </select>
@@ -239,7 +319,7 @@ function InvoiceLinesEditor({
       ))}
 
       <Button onClick={onAddLine} type="button" variant="secondary">
-        Add line
+        Add more
       </Button>
     </div>
   );
@@ -253,30 +333,13 @@ function buildInvoicePayload(form: InvoiceFormState): InvoiceCreateInput {
     throw new Error('Issue date and due date are required.');
   }
 
-  const lines: InvoiceLineInput[] = form.lines.map((line, index) => {
-    const description = line.description.trim();
-    const quantity = Number(line.quantity);
-    const unitPriceMinor = parseMinorAmount(line.unitPrice);
-
-    if (!description) {
-      throw new Error(`Line ${index + 1} requires a description.`);
-    }
-
-    if (!Number.isInteger(quantity) || quantity < 1) {
-      throw new Error(`Line ${index + 1} requires a quantity of at least 1.`);
-    }
-
-    if (unitPriceMinor === null) {
-      throw new Error(`Line ${index + 1} requires a valid unit price.`);
-    }
-
-    return {
-      description,
-      quantity,
-      unitPriceMinor,
-      serviceItemId: normalizeOptionalValue(line.serviceItemId),
-    };
-  });
+  const summary = calculateInvoiceSummary(form);
+  const lines: InvoiceLineInput[] = form.lines.map((line) => ({
+    description: line.description.trim(),
+    quantity: Number(line.quantity),
+    unitPriceMinor: parseMinorAmount(line.unitPrice) ?? 0,
+    serviceItemId: normalizeOptionalValue(line.serviceItemId),
+  }));
 
   return {
     issueDate,
@@ -285,6 +348,8 @@ function buildInvoicePayload(form: InvoiceFormState): InvoiceCreateInput {
     projectId: normalizeOptionalValue(form.projectId),
     notes: normalizeOptionalValue(form.notes),
     terms: normalizeOptionalValue(form.terms),
+    taxPercent: summary.taxPercent,
+    discountMinor: summary.discountMinor,
     lines,
   };
 }
@@ -302,6 +367,10 @@ export function InvoicesPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewMessage, setPreviewMessage] = useState<string | null>(null);
+  const [serviceItemError, setServiceItemError] = useState<string | null>(null);
+  const [serviceItemLoading, setServiceItemLoading] = useState(false);
+  const [serviceItemFormOpen, setServiceItemFormOpen] = useState(false);
+  const [serviceItemForm, setServiceItemForm] = useState({ name: '', unitPrice: '' });
   const [formLoading, setFormLoading] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [issueLoadingId, setIssueLoadingId] = useState<string | null>(null);
@@ -413,6 +482,23 @@ export function InvoicesPage() {
     }));
   }
 
+  function selectServiceItem(index: number, serviceItemId: string) {
+    const selectedServiceItem = serviceItems.find((serviceItem) => serviceItem.id === serviceItemId) ?? null;
+
+    setForm((current) => ({
+      ...current,
+      lines: current.lines.map((line, lineIndex) =>
+        lineIndex === index
+          ? {
+              ...line,
+              serviceItemId,
+              unitPrice: selectedServiceItem ? (selectedServiceItem.unitPriceMinor / 100).toFixed(2) : line.unitPrice,
+            }
+          : line,
+      ),
+    }));
+  }
+
   function addLine() {
     setForm((current) => ({
       ...current,
@@ -431,6 +517,55 @@ export function InvoicesPage() {
         lines: current.lines.filter((_, lineIndex) => lineIndex !== index),
       };
     });
+  }
+
+  async function handleCreateServiceItem(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setServiceItemLoading(true);
+    setServiceItemError(null);
+
+    try {
+      const unitPriceMinor = parseMinorAmount(serviceItemForm.unitPrice);
+      if (!serviceItemForm.name.trim()) {
+        throw new Error('Service item name is required.');
+      }
+
+      if (unitPriceMinor === null) {
+        throw new Error('Service item unit price must be a valid number.');
+      }
+
+      const createdServiceItem = await createServiceItem({
+        name: serviceItemForm.name.trim(),
+        unitPriceMinor,
+      });
+
+      setServiceItems((current) =>
+        [...current, createdServiceItem].sort((left, right) => left.name.localeCompare(right.name)),
+      );
+      setServiceItemForm({ name: '', unitPrice: '' });
+      setServiceItemFormOpen(false);
+
+      setForm((current) => {
+        if (current.lines.length !== 1 || current.lines[0].serviceItemId) {
+          return current;
+        }
+
+        return {
+          ...current,
+          lines: [
+            {
+              ...current.lines[0],
+              serviceItemId: createdServiceItem.id,
+              unitPrice: (createdServiceItem.unitPriceMinor / 100).toFixed(2),
+            },
+          ],
+        };
+      });
+    } catch (error) {
+      setServiceItemError(error instanceof Error ? error.message : 'Unable to create service item');
+    } finally {
+      setServiceItemLoading(false);
+    }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -579,7 +714,7 @@ export function InvoicesPage() {
   }
 
   async function handleArchive(invoice: InvoiceListItem) {
-    const confirmed = window.confirm(`Archive invoice "${invoice.invoiceNumber}"?`);
+    const confirmed = window.confirm(`Delete draft invoice "${invoice.invoiceNumber}"?`);
     if (!confirmed) {
       return;
     }
@@ -626,6 +761,14 @@ export function InvoicesPage() {
 
     return clients.find((client) => client.id === previewInvoice.clientId) ?? null;
   }, [clients, previewInvoice?.clientId]);
+
+  const invoiceSummary = useMemo(() => {
+    try {
+      return calculateInvoiceSummary(form);
+    } catch {
+      return null;
+    }
+  }, [form]);
 
   return (
     <AppPage>
@@ -709,7 +852,8 @@ export function InvoicesPage() {
               <div>
                 <h3 className="text-lg font-semibold tracking-tight text-slate-50">Invoice lines</h3>
                 <p className="mt-1 text-sm text-slate-400">
-                  Use manual line details and optionally link each line to a service item.
+                  Use manual line details and optionally link each line to a service item. Add new catalog items without
+                  leaving the invoice screen.
                 </p>
               </div>
               <InvoiceLinesEditor
@@ -717,8 +861,125 @@ export function InvoicesPage() {
                 onAddLine={addLine}
                 onChangeLine={updateLine}
                 onRemoveLine={removeLine}
+                onSelectServiceItem={selectServiceItem}
                 serviceItems={serviceItems}
               />
+              <div className="rounded-3xl border border-slate-800 bg-slate-950/40 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-base font-semibold tracking-tight text-slate-50">Add new service item</h4>
+                    <p className="mt-1 text-sm text-slate-400">Create the catalog item now and use it immediately in the invoice form.</p>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      setServiceItemFormOpen((current) => !current);
+                      setServiceItemError(null);
+                    }}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {serviceItemFormOpen ? 'Hide' : 'Add new service item'}
+                  </Button>
+                </div>
+                {serviceItemFormOpen ? (
+                  <form className="mt-4 grid gap-4 lg:grid-cols-[1fr_220px_auto]" onSubmit={handleCreateServiceItem}>
+                    <Input
+                      label="Service item name"
+                      maxLength={160}
+                      onChange={(event) => setServiceItemForm((current) => ({ ...current, name: event.target.value }))}
+                      required
+                      value={serviceItemForm.name}
+                    />
+                    <Input
+                      inputMode="decimal"
+                      label="Unit price"
+                      min="0"
+                      onChange={(event) => setServiceItemForm((current) => ({ ...current, unitPrice: event.target.value }))}
+                      placeholder="0.00"
+                      required
+                      step="0.01"
+                      type="number"
+                      value={serviceItemForm.unitPrice}
+                    />
+                    <div className="flex items-end">
+                      <Button loading={serviceItemLoading} type="submit">
+                        Save item
+                      </Button>
+                    </div>
+                  </form>
+                ) : null}
+                {serviceItemError ? (
+                  <div className="mt-4 rounded-2xl border border-rose-900 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
+                    {serviceItemError}
+                  </div>
+                ) : null}
+                <p className="mt-4 text-sm text-slate-400">New items are added to the service item list for this tenant.</p>
+              </div>
+            </section>
+
+            <section className="space-y-4 border-t border-slate-800 pt-5">
+              <div>
+                <h3 className="text-lg font-semibold tracking-tight text-slate-50">Tax and discount</h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  Tax is calculated from the subtotal. Discount is applied after tax and before the final total.
+                </p>
+                <p className="mt-1 text-xs uppercase tracking-[0.24em] text-slate-500">
+                  Amounts use {issuerProfile?.currencyCode ?? 'USD'}
+                </p>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Input
+                  inputMode="decimal"
+                  label="Tax (%)"
+                  max="100"
+                  min="0"
+                  onChange={(event) => setForm((current) => ({ ...current, taxPercent: event.target.value }))}
+                  placeholder="0.00"
+                  step="0.01"
+                  type="number"
+                  value={form.taxPercent}
+                />
+                <Input
+                  inputMode="decimal"
+                  label="Discount amount"
+                  min="0"
+                  onChange={(event) => setForm((current) => ({ ...current, discountMinor: event.target.value }))}
+                  placeholder="0.00"
+                  step="0.01"
+                  type="number"
+                  value={form.discountMinor}
+                />
+                <div className="rounded-3xl border border-slate-800 bg-slate-950/40 p-4 lg:col-span-2">
+                  {invoiceSummary ? (
+                    <div className="grid gap-2 text-sm text-slate-300 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-3">
+                        <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Subtotal</div>
+                        <div className="mt-2 text-base font-medium text-slate-50">{formatMinorAmount(invoiceSummary.subtotalMinor)}</div>
+                      </div>
+                      <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-3">
+                        <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Tax</div>
+                        <div className="mt-2 text-base font-medium text-slate-50">
+                          {formatMinorAmount(invoiceSummary.taxAmountMinor)}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-3">
+                        <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Discount</div>
+                        <div className="mt-2 text-base font-medium text-slate-50">
+                          {formatMinorAmount(invoiceSummary.discountMinor)}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-3">
+                        <div className="text-xs uppercase tracking-[0.24em] text-cyan-100">Total</div>
+                        <div className="mt-2 text-base font-semibold text-cyan-50">
+                          {formatMinorAmount(invoiceSummary.totalMinor)}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-slate-400">Complete valid line items to preview totals.</div>
+                  )}
+                </div>
+              </div>
             </section>
 
             <section className="space-y-4 border-t border-slate-800 pt-5">
@@ -881,7 +1142,7 @@ export function InvoicesPage() {
                           ) : null}
                           {isDraft(invoice.status) ? (
                             <Button loading={archiveLoadingId === invoice.id} onClick={() => void handleArchive(invoice)} variant="secondary">
-                              Archive
+                              Delete draft
                             </Button>
                           ) : null}
                         </div>

@@ -36,6 +36,9 @@ export interface InvoiceListItem {
   project: InvoiceReference | null;
   notes: string | null;
   terms: string | null;
+  taxPercent: number;
+  taxAmountMinor: number;
+  discountMinor: number;
   subtotalMinor: number;
   totalMinor: number;
   paidAmountMinor: number;
@@ -84,6 +87,8 @@ export interface InvoiceCreateInput {
   projectId?: string | null;
   notes?: string | null;
   terms?: string | null;
+  taxPercent?: number | null;
+  discountMinor?: number | null;
   lines: InvoiceLineInput[];
 }
 

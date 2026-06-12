@@ -33,6 +33,8 @@ const invoiceCreateBodySchema = z
     projectId: z.string().uuid().nullable().optional(),
     notes: z.string().trim().min(1).max(5000).nullable().optional(),
     terms: z.string().trim().min(1).max(5000).nullable().optional(),
+    taxPercent: z.number().min(0).max(100).nullable().optional(),
+    discountMinor: z.number().int().min(0).nullable().optional(),
     lines: z.array(invoiceLineSchema).min(1),
   })
   .refine((value) => value.dueDate.getTime() >= value.issueDate.getTime(), {
@@ -47,6 +49,8 @@ const invoiceUpdateBodySchema = z.object({
   projectId: z.string().uuid().nullable().optional(),
   notes: z.string().trim().min(1).max(5000).nullable().optional(),
   terms: z.string().trim().min(1).max(5000).nullable().optional(),
+  taxPercent: z.number().min(0).max(100).nullable().optional(),
+  discountMinor: z.number().int().min(0).nullable().optional(),
   lines: z.array(invoiceLineSchema).min(1),
 });
 
@@ -134,6 +138,8 @@ export async function createInvoiceHandler(req: Request, res: Response): Promise
     projectId: parsed.data.projectId,
     notes: parsed.data.notes ?? undefined,
     terms: parsed.data.terms ?? undefined,
+    taxPercent: parsed.data.taxPercent ?? undefined,
+    discountMinor: parsed.data.discountMinor ?? undefined,
     lines: parsed.data.lines.map((line) => ({
       description: line.description,
       quantity: line.quantity,
@@ -219,6 +225,8 @@ export async function updateInvoiceHandler(req: Request, res: Response): Promise
     projectId: parsed.data.projectId,
     notes: parsed.data.notes,
     terms: parsed.data.terms,
+    taxPercent: parsed.data.taxPercent,
+    discountMinor: parsed.data.discountMinor,
     lines: parsed.data.lines.map((line) => ({
       description: line.description,
       quantity: line.quantity,

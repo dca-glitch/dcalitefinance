@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { AppError } from '../errors/AppError';
+import { paymentMethodOptions } from '../constants/payment-methods';
 import { toJsonSafe } from '../utils/json';
 import {
   createPaymentAttachment as createPaymentAttachmentService,
@@ -25,7 +26,7 @@ const paymentBodySchema = z.object({
   invoiceId: z.string().uuid(),
   amountMinor: z.number().int().min(1),
   paymentDate: z.coerce.date(),
-  method: z.string().trim().min(1).max(80),
+  method: z.enum(paymentMethodOptions),
   reference: z.string().trim().min(1).max(120).nullable().optional(),
   notes: z.string().trim().min(1).max(5000).nullable().optional(),
 });

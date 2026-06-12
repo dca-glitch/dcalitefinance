@@ -1,6 +1,6 @@
 import type { ClientRecord } from '../../types/client';
-import type { InvoiceRecord, InvoiceStatus } from '../../types/invoice';
 import type { InvoiceDocumentRecord } from '../../types/invoice-document';
+import type { InvoiceRecord, InvoiceStatus } from '../../types/invoice';
 import type { IssuerProfileRecord } from '../../types/issuer-profile';
 import { Button } from '../ui/Button';
 import { InvoiceDocumentsPanel } from './InvoiceDocumentsPanel';
@@ -46,6 +46,13 @@ function formatMinorAmount(value: number, currencyCode: string): string {
   } catch {
     return `${currencyCode} ${(value / 100).toFixed(2)}`;
   }
+}
+
+function formatPercent(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    minimumFractionDigits: value % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function statusLabel(status: InvoiceStatus): string {
@@ -104,6 +111,11 @@ export function InvoicePreviewPanel({
           <p className="text-sm text-slate-400">
             Issue date {formatDate(invoice.issueDate)} · Due date {formatDate(invoice.dueDate)}
           </p>
+          {invoice.status === 'DRAFT' ? (
+            <p className="text-sm text-slate-400">
+              Review the draft layout here before confirming issue. The final PDF is generated after issue.
+            </p>
+          ) : null}
           <p className="text-sm text-slate-400">
             Client: {client?.name ?? invoice.client?.name ?? 'No client'} · Project: {invoice.project?.name ?? 'No project'}
           </p>
@@ -256,6 +268,18 @@ export function InvoicePreviewPanel({
                 <span>Subtotal</span>
                 <span>{formatMinorAmount(invoice.subtotalMinor, currencyCode)}</span>
               </div>
+              {invoice.taxPercent > 0 ? (
+                <div className="mt-2 flex items-center justify-between gap-4">
+                  <span>Tax ({formatPercent(invoice.taxPercent)}%)</span>
+                  <span>{formatMinorAmount(invoice.taxAmountMinor, currencyCode)}</span>
+                </div>
+              ) : null}
+              {invoice.discountMinor > 0 ? (
+                <div className="mt-2 flex items-center justify-between gap-4">
+                  <span>Discount</span>
+                  <span>{formatMinorAmount(invoice.discountMinor, currencyCode)}</span>
+                </div>
+              ) : null}
               <div className="mt-2 flex items-center justify-between gap-4">
                 <span>Total</span>
                 <span>{formatMinorAmount(invoice.totalMinor, currencyCode)}</span>

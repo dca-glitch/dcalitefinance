@@ -42,6 +42,9 @@ export interface SafeInvoiceResponse {
   project: SafeInvoiceReferenceResponse | null;
   notes: string | null;
   terms: string | null;
+  taxPercent: number;
+  taxAmountMinor: number;
+  discountMinor: number;
   subtotalMinor: number;
   totalMinor: number;
   paidAmountMinor: number;
@@ -66,6 +69,9 @@ export interface SafeInvoiceListItemResponse {
   project: SafeInvoiceReferenceResponse | null;
   notes: string | null;
   terms: string | null;
+  taxPercent: number;
+  taxAmountMinor: number;
+  discountMinor: number;
   subtotalMinor: number;
   totalMinor: number;
   paidAmountMinor: number;
@@ -92,6 +98,8 @@ export interface CreateInvoiceInput {
   projectId?: string | null;
   notes?: string | null;
   terms?: string | null;
+  taxPercent?: number | null;
+  discountMinor?: number | null;
   lines: InvoiceLineInput[];
 }
 
@@ -106,6 +114,8 @@ export interface UpdateInvoiceInput {
   projectId?: string | null;
   notes?: string | null;
   terms?: string | null;
+  taxPercent?: number | null;
+  discountMinor?: number | null;
   lines: InvoiceLineInput[];
 }
 
@@ -165,6 +175,9 @@ const invoiceSelect = {
   projectId: true,
   notes: true,
   terms: true,
+  taxRateBasisPoints: true,
+  taxAmountMinor: true,
+  discountMinor: true,
   subtotalMinor: true,
   totalMinor: true,
   paidAmountMinor: true,
@@ -201,6 +214,9 @@ const invoiceListSelect = {
   projectId: true,
   notes: true,
   terms: true,
+  taxRateBasisPoints: true,
+  taxAmountMinor: true,
+  discountMinor: true,
   subtotalMinor: true,
   totalMinor: true,
   paidAmountMinor: true,
@@ -269,6 +285,14 @@ function invalidMoneyError(): AppError {
   return new AppError('Invalid invoice money value', 400, 'INVALID_INVOICE_MONEY');
 }
 
+function invalidTaxError(): AppError {
+  return new AppError('Invalid invoice tax value', 400, 'INVALID_INVOICE_TAX');
+}
+
+function invalidDiscountError(): AppError {
+  return new AppError('Invalid invoice discount value', 400, 'INVALID_INVOICE_DISCOUNT');
+}
+
 function buildInvoiceWhere(input: { tenantId: string; search?: string }): Prisma.InvoiceWhereInput {
   const where: Prisma.InvoiceWhereInput = {
     tenantId: input.tenantId,
@@ -324,6 +348,10 @@ function mapInvoiceLine(line: {
   };
 }
 
+function mapTaxPercent(taxRateBasisPoints: number): number {
+  return taxRateBasisPoints / 100;
+}
+
 function mapInvoice(invoice: {
   id: string;
   invoiceNumber: string;
@@ -338,6 +366,9 @@ function mapInvoice(invoice: {
   project: { id: string; name: string } | null;
   notes: string | null;
   terms: string | null;
+  taxRateBasisPoints: number;
+  taxAmountMinor: number;
+  discountMinor: number;
   subtotalMinor: number;
   totalMinor: number;
   paidAmountMinor: number;
@@ -371,6 +402,9 @@ function mapInvoice(invoice: {
     project: mapInvoiceReference(invoice.project),
     notes: invoice.notes,
     terms: invoice.terms,
+    taxPercent: mapTaxPercent(invoice.taxRateBasisPoints),
+    taxAmountMinor: invoice.taxAmountMinor,
+    discountMinor: invoice.discountMinor,
     subtotalMinor: invoice.subtotalMinor,
     totalMinor: invoice.totalMinor,
     paidAmountMinor: invoice.paidAmountMinor,
@@ -396,6 +430,9 @@ function mapInvoiceListItem(invoice: {
   project: { id: string; name: string } | null;
   notes: string | null;
   terms: string | null;
+  taxRateBasisPoints: number;
+  taxAmountMinor: number;
+  discountMinor: number;
   subtotalMinor: number;
   totalMinor: number;
   paidAmountMinor: number;
@@ -418,6 +455,9 @@ function mapInvoiceListItem(invoice: {
     project: mapInvoiceReference(invoice.project),
     notes: invoice.notes,
     terms: invoice.terms,
+    taxPercent: mapTaxPercent(invoice.taxRateBasisPoints),
+    taxAmountMinor: invoice.taxAmountMinor,
+    discountMinor: invoice.discountMinor,
     subtotalMinor: invoice.subtotalMinor,
     totalMinor: invoice.totalMinor,
     paidAmountMinor: invoice.paidAmountMinor,
@@ -494,6 +534,30 @@ function validateDateRange(issueDate: Date, dueDate: Date): void {
   }
 }
 
+function normalizeTaxPercent(value?: number | null): number {
+  if (value === undefined || value === null) {
+    return 0;
+  }
+
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    throw invalidTaxError();
+  }
+
+  return Math.round(value * 100);
+}
+
+function normalizeDiscountMinor(value?: number | null): number {
+  if (value === undefined || value === null) {
+    return 0;
+  }
+
+  if (!Number.isInteger(value) || value < 0) {
+    throw invalidDiscountError();
+  }
+
+  return value;
+}
+
 function normalizeLines(lines: InvoiceLineInput[]): Array<InvoiceLineInput & { lineTotalMinor: number }> {
   if (lines.length === 0) {
     throw invalidLineError();
@@ -519,6 +583,28 @@ function normalizeLines(lines: InvoiceLineInput[]): Array<InvoiceLineInput & { l
       lineTotalMinor,
     };
   });
+}
+
+function calculateInvoiceTotals(input: {
+  subtotalMinor: number;
+  taxPercent?: number | null;
+  discountMinor?: number | null;
+}): { taxRateBasisPoints: number; taxAmountMinor: number; discountMinor: number; totalMinor: number } {
+  const taxRateBasisPoints = normalizeTaxPercent(input.taxPercent);
+  const discountMinor = normalizeDiscountMinor(input.discountMinor);
+  const taxAmountMinor = Math.round((input.subtotalMinor * taxRateBasisPoints) / 10_000);
+  const totalMinor = input.subtotalMinor + taxAmountMinor - discountMinor;
+
+  if (totalMinor < 0) {
+    throw invalidDiscountError();
+  }
+
+  return {
+    taxRateBasisPoints,
+    taxAmountMinor,
+    discountMinor,
+    totalMinor,
+  };
 }
 
 function invoiceLineData(lines: Array<InvoiceLineInput & { lineTotalMinor: number }>, tenantId: string, invoiceId: string, serviceItemIds: Array<string | null | undefined>) {
@@ -563,7 +649,11 @@ async function createInvoiceRecord(
 ) {
   const { invoiceYear, invoiceSequence, invoiceNumber } = await nextInvoiceNumber(tx, input.tenantId, input.issueDate);
   const subtotalMinor = lineInputs.reduce((sum, line) => sum + line.lineTotalMinor, 0);
-  const totalMinor = subtotalMinor;
+  const totals = calculateInvoiceTotals({
+    subtotalMinor,
+    taxPercent: input.taxPercent,
+    discountMinor: input.discountMinor,
+  });
   const invoiceId = randomUUID();
 
   await tx.invoice.create({
@@ -580,10 +670,13 @@ async function createInvoiceRecord(
       dueDate: input.dueDate,
       notes: normalizeOptionalText(input.notes),
       terms: normalizeOptionalText(input.terms),
+      taxRateBasisPoints: totals.taxRateBasisPoints,
+      taxAmountMinor: totals.taxAmountMinor,
+      discountMinor: totals.discountMinor,
       subtotalMinor,
-      totalMinor,
+      totalMinor: totals.totalMinor,
       paidAmountMinor: 0,
-      balanceDueMinor: subtotalMinor,
+      balanceDueMinor: totals.totalMinor,
     },
   });
 
@@ -809,6 +902,9 @@ export async function updateInvoice(input: UpdateInvoiceInput): Promise<SafeInvo
         projectId: true,
         notes: true,
         terms: true,
+        taxRateBasisPoints: true,
+        taxAmountMinor: true,
+        discountMinor: true,
       },
     });
 
@@ -833,7 +929,11 @@ export async function updateInvoice(input: UpdateInvoiceInput): Promise<SafeInvo
     );
 
     const subtotalMinor = normalizedLines.reduce((sum, line) => sum + line.lineTotalMinor, 0);
-    const totalMinor = subtotalMinor;
+    const totals = calculateInvoiceTotals({
+      subtotalMinor,
+      taxPercent: input.taxPercent === undefined ? existing.taxRateBasisPoints / 100 : input.taxPercent,
+      discountMinor: input.discountMinor === undefined ? existing.discountMinor : input.discountMinor,
+    });
 
     await tx.invoiceLine.updateMany({
       where: {
@@ -855,10 +955,13 @@ export async function updateInvoice(input: UpdateInvoiceInput): Promise<SafeInvo
         dueDate,
         notes: input.notes === undefined ? existing.notes : normalizeOptionalText(input.notes),
         terms: input.terms === undefined ? existing.terms : normalizeOptionalText(input.terms),
+        taxRateBasisPoints: totals.taxRateBasisPoints,
+        taxAmountMinor: totals.taxAmountMinor,
+        discountMinor: totals.discountMinor,
         subtotalMinor,
-        totalMinor,
+        totalMinor: totals.totalMinor,
         paidAmountMinor: 0,
-        balanceDueMinor: subtotalMinor,
+        balanceDueMinor: totals.totalMinor,
       },
       select: invoiceSelect,
     });

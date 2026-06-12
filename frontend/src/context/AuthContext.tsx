@@ -1,6 +1,6 @@
 import { createContext, useEffect, useState, type ReactNode } from 'react';
 import { apiClient, setUnauthorizedHandler } from '../lib/api-client';
-import { clearAccessToken, getAccessToken, setAccessToken } from '../lib/auth-storage';
+import { AUTH_CHANGE_EVENT, clearAccessToken, getAccessToken, setAccessToken } from '../lib/auth-storage';
 import { clearStoredSession, getStoredSession, setStoredActiveTenantId, setStoredSession } from '../lib/session-storage';
 import type { ApiResponse } from '../types/api';
 import type { AuthTenant, AuthUser, LoginResponse } from '../types/auth';
@@ -46,6 +46,36 @@ function pickActiveTenantId(tenants: AuthTenant[], preferredTenantId: string | n
   return tenants[0]?.id ?? null;
 }
 
+function readAuthSnapshot(): AuthState {
+  const accessToken = getAccessToken();
+  const storedSession = getStoredSession();
+
+  if (!accessToken || !storedSession) {
+    return {
+      ...initialState,
+      isHydrated: true,
+    };
+  }
+
+  const activeTenantId = pickActiveTenantId(storedSession.tenants, storedSession.activeTenantId);
+  if (activeTenantId !== storedSession.activeTenantId) {
+    setStoredSession({
+      ...storedSession,
+      activeTenantId,
+    });
+  }
+
+  return {
+    accessToken,
+    user: storedSession.user,
+    tenants: storedSession.tenants,
+    activeTenantId,
+    isHydrated: true,
+    isLoggingIn: false,
+    authError: null,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(initialState);
 
@@ -65,30 +95,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    const accessToken = getAccessToken();
-    const storedSession = getStoredSession();
-
-    if (!accessToken || !storedSession) {
-      clearAuthState({ hydrated: true });
-      return;
-    }
-
-    const activeTenantId = pickActiveTenantId(storedSession.tenants, storedSession.activeTenantId);
-
-    setStoredSession({
-      ...storedSession,
-      activeTenantId,
-    });
-
-    setState({
-      accessToken,
-      user: storedSession.user,
-      tenants: storedSession.tenants,
-      activeTenantId,
-      isHydrated: true,
-      isLoggingIn: false,
-      authError: null,
-    });
+    setState((current) => ({
+      ...current,
+      ...readAuthSnapshot(),
+    }));
   }, []);
 
   useEffect(() => {
@@ -99,7 +109,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       setUnauthorizedHandler(null);
     };
-  }, [state.authError]);
+  }, []);
+
+  useEffect(() => {
+    function syncAuthStateFromStorage() {
+      setState((current) => {
+        const snapshot = readAuthSnapshot();
+
+        if (!snapshot.accessToken || !snapshot.user) {
+          return {
+            ...snapshot,
+            authError: current.authError,
+          };
+        }
+
+        if (
+          current.accessToken === snapshot.accessToken &&
+          current.activeTenantId === snapshot.activeTenantId &&
+          current.user?.id === snapshot.user?.id &&
+          current.tenants.length === snapshot.tenants.length &&
+          current.tenants.every((tenant, index) => tenant.id === snapshot.tenants[index]?.id)
+        ) {
+          return current;
+        }
+
+        return snapshot;
+      });
+    }
+
+    window.addEventListener('storage', syncAuthStateFromStorage);
+    window.addEventListener(AUTH_CHANGE_EVENT, syncAuthStateFromStorage);
+
+    return () => {
+      window.removeEventListener('storage', syncAuthStateFromStorage);
+      window.removeEventListener(AUTH_CHANGE_EVENT, syncAuthStateFromStorage);
+    };
+  }, []);
 
   async function login(email: string, password: string): Promise<void> {
     setState((current) => ({
@@ -128,6 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tenants: nextTenants,
         activeTenantId,
       });
+      window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
 
       setState({
         accessToken: response.data.accessToken,

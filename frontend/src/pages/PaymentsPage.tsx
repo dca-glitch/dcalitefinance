@@ -11,6 +11,7 @@ import { AttachmentPanel } from '../components/attachments/AttachmentPanel';
 import { listInvoices } from '../lib/invoices-api';
 import { deletePaymentAttachment, listPaymentAttachments, uploadPaymentAttachment } from '../lib/file-attachments-api';
 import { createPayment, listPayments, reversePayment } from '../lib/payments-api';
+import { getPaymentMethodOptions } from '../lib/payment-method-options';
 import { useAuth } from '../hooks/useAuth';
 import type { InvoiceListItem } from '../types/invoice';
 import type { FileAttachmentRecord } from '../types/file-attachment';
@@ -76,7 +77,7 @@ function buildInitialForm(): PaymentFormState {
     invoiceId: '',
     amount: '',
     paymentDate: toLocalDateInputValue(),
-    method: 'Bank Transfer',
+    method: '',
     reference: '',
     notes: '',
   };
@@ -353,15 +354,19 @@ export function PaymentsPage() {
               value={form.paymentDate}
             />
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-200">Method</span>
+              <span className="mb-2 block text-sm font-medium text-slate-200">Method *</span>
               <select
                 className="w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
                 onChange={(event) => setForm((current) => ({ ...current, method: event.target.value }))}
+                required
                 value={form.method}
               >
-                <option value="Bank Transfer">Bank Transfer</option>
-                <option value="Cash">Cash</option>
-                <option value="Stripe">Stripe</option>
+                <option value="">Choose a payment method</option>
+                {getPaymentMethodOptions(form.method).map((paymentMethod) => (
+                  <option key={paymentMethod} value={paymentMethod}>
+                    {paymentMethod}
+                  </option>
+                ))}
               </select>
             </label>
           </div>

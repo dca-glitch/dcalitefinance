@@ -78,6 +78,9 @@ function buildInvoicePdfLines(input: {
     dueDate: Date;
     notes: string | null;
     terms: string | null;
+    taxPercent: number;
+    taxAmountMinor: number;
+    discountMinor: number;
     subtotalMinor: number;
     totalMinor: number;
     paidAmountMinor: number;
@@ -165,6 +168,12 @@ function buildInvoicePdfLines(input: {
   }
   lines.push('');
   lines.push(`Subtotal: ${formatMinorAmount(currency, invoice.subtotalMinor)}`);
+  if (invoice.taxPercent > 0) {
+    lines.push(`Tax (${invoice.taxPercent.toFixed(2).replace(/\.00$/, '')}%): ${formatMinorAmount(currency, invoice.taxAmountMinor)}`);
+  }
+  if (invoice.discountMinor > 0) {
+    lines.push(`Discount: ${formatMinorAmount(currency, invoice.discountMinor)}`);
+  }
   lines.push(`Total: ${formatMinorAmount(currency, invoice.totalMinor)}`);
   lines.push(`Paid: ${formatMinorAmount(currency, invoice.paidAmountMinor)}`);
   lines.push(`Balance Due: ${formatMinorAmount(currency, invoice.balanceDueMinor)}`);
@@ -191,6 +200,9 @@ async function loadInvoiceForPdf(tenantId: string, invoiceId: string) {
       dueDate: true,
       notes: true,
       terms: true,
+      taxRateBasisPoints: true,
+      taxAmountMinor: true,
+      discountMinor: true,
       subtotalMinor: true,
       totalMinor: true,
       paidAmountMinor: true,
@@ -340,6 +352,9 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
         dueDate: invoice.dueDate,
         notes: invoice.notes,
         terms: invoice.terms,
+        taxPercent: invoice.taxRateBasisPoints / 100,
+        taxAmountMinor: invoice.taxAmountMinor,
+        discountMinor: invoice.discountMinor,
         subtotalMinor: invoice.subtotalMinor,
         totalMinor: invoice.totalMinor,
         paidAmountMinor: invoice.paidAmountMinor,
