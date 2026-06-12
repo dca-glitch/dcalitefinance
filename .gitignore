@@ -16,3 +16,6 @@ docker-compose.override.yml
 
 # Local secrets
 secrets/
+
+# Local Cline result report
+.dca-cline/DCA_CLINE_RESULT.md
