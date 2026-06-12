@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { FileAttachmentEntityType, InvoiceStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { AppError } from '../errors/AppError';
-import { buildSimplePdf } from './pdf-builder.service';
+import { buildInvoicePdfBuffer } from './invoice-pdf-renderer';
 import { listFileAttachments, uploadFileAttachment, type SafeFileAttachmentResponse } from './file-attachments.service';
 
 export interface GenerateInvoicePdfInput {
@@ -321,59 +321,52 @@ export async function generateInvoicePdf(input: GenerateInvoicePdfInput): Promis
     return existing;
   }
 
-  const pdfBuffer = buildSimplePdf(
-    buildInvoicePdfLines({
-      issuerProfile: {
-        issuerDisplayName: issuerProfile.issuerDisplayName,
-        issuerLegalName: normalizeOptionalText(issuerProfile.issuerLegalName),
-        addressLine1: normalizeOptionalText(issuerProfile.addressLine1),
-        addressLine2: normalizeOptionalText(issuerProfile.addressLine2),
-        city: normalizeOptionalText(issuerProfile.city),
-        state: normalizeOptionalText(issuerProfile.state),
-        postalCode: normalizeOptionalText(issuerProfile.postalCode),
-        country: normalizeOptionalText(issuerProfile.country),
-        email: normalizeOptionalText(issuerProfile.email),
-        phone: normalizeOptionalText(issuerProfile.phone),
-        website: normalizeOptionalText(issuerProfile.website),
-        taxId: normalizeOptionalText(issuerProfile.taxId),
-        companyRegistrationNumber: normalizeOptionalText(issuerProfile.companyRegistrationNumber),
-        currencyCode: issuerProfile.currencyCode,
-        defaultInvoiceTerms: normalizeOptionalText(issuerProfile.defaultInvoiceTerms),
-        defaultPaymentInstructions: normalizeOptionalText(issuerProfile.defaultPaymentInstructions),
-        bankAccountName: normalizeOptionalText(issuerProfile.bankAccountName),
-        bankName: normalizeOptionalText(issuerProfile.bankName),
-        bankAccountNumber: normalizeOptionalText(issuerProfile.bankAccountNumber),
-        bankSwift: normalizeOptionalText(issuerProfile.bankSwift),
-        invoiceFooter: normalizeOptionalText(issuerProfile.invoiceFooter),
-      },
-      invoice: {
-        invoiceNumber: invoice.invoiceNumber,
-        invoiceYear: invoice.invoiceYear,
-        status: invoice.status,
-        issueDate: invoice.issueDate,
-        dueDate: invoice.dueDate,
-        notes: invoice.notes,
-        terms: invoice.terms,
-        taxPercent: invoice.taxRateBasisPoints / 100,
-        taxAmountMinor: invoice.taxAmountMinor,
-        discountMinor: invoice.discountMinor,
-        subtotalMinor: invoice.subtotalMinor,
-        totalMinor: invoice.totalMinor,
-        paidAmountMinor: invoice.paidAmountMinor,
-        balanceDueMinor: invoice.balanceDueMinor,
-        client: invoice.client,
-        project: invoice.project,
-        lines: invoice.lines.map((line) => ({
-          lineNumber: line.lineNumber,
-          description: line.description,
-          quantity: line.quantity,
-          unitPriceMinor: line.unitPriceMinor,
-          lineTotalMinor: line.lineTotalMinor,
-          serviceItem: line.serviceItem,
-        })),
-      },
-    }),
-  );
+  const pdfBuffer = buildInvoicePdfBuffer({
+    issuerProfile: {
+      issuerDisplayName: issuerProfile.issuerDisplayName,
+      issuerLegalName: normalizeOptionalText(issuerProfile.issuerLegalName),
+      addressLine1: normalizeOptionalText(issuerProfile.addressLine1),
+      addressLine2: normalizeOptionalText(issuerProfile.addressLine2),
+      city: normalizeOptionalText(issuerProfile.city),
+      state: normalizeOptionalText(issuerProfile.state),
+      postalCode: normalizeOptionalText(issuerProfile.postalCode),
+      country: normalizeOptionalText(issuerProfile.country),
+      email: normalizeOptionalText(issuerProfile.email),
+      phone: normalizeOptionalText(issuerProfile.phone),
+      website: normalizeOptionalText(issuerProfile.website),
+      taxId: normalizeOptionalText(issuerProfile.taxId),
+      companyRegistrationNumber: normalizeOptionalText(issuerProfile.companyRegistrationNumber),
+      currencyCode: issuerProfile.currencyCode,
+      defaultInvoiceTerms: normalizeOptionalText(issuerProfile.defaultInvoiceTerms),
+      defaultPaymentInstructions: normalizeOptionalText(issuerProfile.defaultPaymentInstructions),
+      bankAccountName: normalizeOptionalText(issuerProfile.bankAccountName),
+      bankName: normalizeOptionalText(issuerProfile.bankName),
+      bankAccountNumber: normalizeOptionalText(issuerProfile.bankAccountNumber),
+      bankSwift: normalizeOptionalText(issuerProfile.bankSwift),
+    },
+    invoice: {
+      invoiceNumber: invoice.invoiceNumber,
+      status: invoice.status,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      notes: invoice.notes,
+      terms: invoice.terms,
+      taxPercent: invoice.taxRateBasisPoints / 100,
+      taxAmountMinor: invoice.taxAmountMinor,
+      discountMinor: invoice.discountMinor,
+      subtotalMinor: invoice.subtotalMinor,
+      totalMinor: invoice.totalMinor,
+      client: invoice.client,
+      lines: invoice.lines.map((line) => ({
+        lineNumber: line.lineNumber,
+        description: line.description,
+        quantity: line.quantity,
+        unitPriceMinor: line.unitPriceMinor,
+        lineTotalMinor: line.lineTotalMinor,
+      })),
+      currencyCode: issuerProfile.currencyCode,
+    },
+  });
 
   const attachment = await uploadFileAttachment({
     tenantId: input.tenantId,
